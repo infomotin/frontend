@@ -9,19 +9,30 @@ interface StrapiImage {
   url: string;
 }
 
+interface Category {
+  documentId: string;
+  name: string;
+}
+
 interface Product {
   documentId: string;
   name: string;
-  type: string;
   sku: string;
   stockQuantity: number;
-  unit: string;
+  baseUnit: string;
+  purchaseUnit: string;
+  saleUnit: string;
+  purchaseToSaleFactor: number;
+  saleToBaseFactor: number;
   costPrice: number;
   sellingPrice: number;
   description?: string;
   attributes?: Record<string, string>;
   alertLevel?: number;
   image?: StrapiImage | null;
+  category?: Category;
+  subCategory?: Category;
+  childCategory?: Category;
 }
 
 interface ProductAttribute {
@@ -34,6 +45,10 @@ interface ProductAttribute {
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subCategories, setSubCategories] = useState<Category[]>([]);
+  const [childCategories, setChildCategories] = useState<Category[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -50,8 +65,14 @@ export default function InventoryPage() {
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
-    type: "General",
-    unit: "pcs",
+    category: "",
+    subCategory: "",
+    childCategory: "",
+    baseUnit: "Pcs",
+    purchaseUnit: "Pcs",
+    saleUnit: "Pcs",
+    purchaseToSaleFactor: 1,
+    saleToBaseFactor: 1,
     costPrice: 0,
     sellingPrice: 0,
     stockQuantity: 0,
@@ -65,15 +86,9 @@ export default function InventoryPage() {
     try {
       setLoading(true);
       const res = await fetchAPI("/products?populate=*");
-      if (res.data) {
-        setProducts(res.data);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Failed to load inventory.");
-      }
+      if (res.data) setProducts(res.data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load inventory.");
     } finally {
       setLoading(false);
     }
@@ -82,25 +97,61 @@ export default function InventoryPage() {
   const loadAttributes = async () => {
     try {
       const res = await fetchAPI("/product-attributes");
-      if (res.data) {
-        setAttributes(res.data);
-      }
-    } catch (err: unknown) {
-      console.error("Failed to load attributes", err);
+      if (res.data) setAttributes(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const res = await fetchAPI("/product-categories?sort=name:ASC");
+      if (res.data) setCategories(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadSubCategories = async (catId: string) => {
+    try {
+      const res = await fetchAPI(
+        `/product-sub-categories?filters[category][documentId][$eq]=${catId}&sort=name:ASC`
+      );
+      setSubCategories(res.data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadChildCategories = async (subId: string) => {
+    try {
+      const res = await fetchAPI(
+        `/product-child-categories?filters[subCategory][documentId][$eq]=${subId}&sort=name:ASC`
+      );
+      setChildCategories(res.data || []);
+    } catch (err) {
+      console.error(err);
     }
   };
 
   useEffect(() => {
     loadProducts();
     loadAttributes();
+    loadCategories();
   }, []);
 
   const resetForm = () => {
     setFormData({
       name: "",
       sku: "",
-      type: "General",
-      unit: "pcs",
+      category: "",
+      subCategory: "",
+      childCategory: "",
+      baseUnit: "Pcs",
+      purchaseUnit: "Pcs",
+      saleUnit: "Pcs",
+      purchaseToSaleFactor: 1,
+      saleToBaseFactor: 1,
       costPrice: 0,
       sellingPrice: 0,
       stockQuantity: 0,
@@ -112,6 +163,8 @@ export default function InventoryPage() {
     setEditingId(null);
     setImageFile(null);
     setImagePreview("");
+    setSubCategories([]);
+    setChildCategories([]);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,8 +188,14 @@ export default function InventoryPage() {
     setFormData({
       name: product.name,
       sku: product.sku,
-      type: product.type,
-      unit: product.unit,
+      category: product.category?.documentId || "",
+      subCategory: product.subCategory?.documentId || "",
+      childCategory: product.childCategory?.documentId || "",
+      baseUnit: product.baseUnit || "Pcs",
+      purchaseUnit: product.purchaseUnit || "Pcs",
+      saleUnit: product.saleUnit || "Pcs",
+      purchaseToSaleFactor: product.purchaseToSaleFactor || 1,
+      saleToBaseFactor: product.saleToBaseFactor || 1,
       costPrice: product.costPrice,
       sellingPrice: product.sellingPrice,
       stockQuantity: product.stockQuantity,
@@ -151,18 +210,21 @@ export default function InventoryPage() {
     } else {
       setImagePreview("");
     }
+
+    if (product.category?.documentId)
+      loadSubCategories(product.category.documentId);
+    if (product.subCategory?.documentId)
+      loadChildCategories(product.subCategory.documentId);
+
     setImageFile(null);
     setIsModalOpen(true);
   };
 
   const handleDelete = async (documentId: string) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
-
     try {
-      await fetchAPI(`/products/${documentId}`, {
-        method: "DELETE",
-      });
-      setProducts((prev) => prev.filter((p) => p.documentId !== documentId));
+      await fetchAPI(`/products/${documentId}`, { method: "DELETE" });
+      loadProducts();
     } catch (err: any) {
       alert("Failed to delete: " + err.message);
     }
@@ -175,7 +237,6 @@ export default function InventoryPage() {
 
     try {
       let imageId = formData.image?.id;
-
       if (imageFile) {
         const uploaded = await uploadFile(imageFile);
         imageId = uploaded.id;
@@ -184,6 +245,9 @@ export default function InventoryPage() {
       const payload = {
         ...formData,
         image: imageId || null,
+        category: formData.category || null,
+        subCategory: formData.subCategory || null,
+        childCategory: formData.childCategory || null,
       };
 
       if (editingId) {
@@ -201,21 +265,29 @@ export default function InventoryPage() {
       setIsModalOpen(false);
       resetForm();
       loadProducts();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Operation failed");
+    } catch (err: any) {
+      setError(err.message || "Operation failed");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const updateAttribute = (attrName: string, value: string) => {
+  const handleCategoryChange = (val: string) => {
     setFormData({
       ...formData,
-      attributes: {
-        ...formData.attributes,
-        [attrName]: value,
-      },
+      category: val,
+      subCategory: "",
+      childCategory: "",
     });
+    setSubCategories([]);
+    setChildCategories([]);
+    if (val) loadSubCategories(val);
+  };
+
+  const handleSubCategoryChange = (val: string) => {
+    setFormData({ ...formData, subCategory: val, childCategory: "" });
+    setChildCategories([]);
+    if (val) loadChildCategories(val);
   };
 
   if (loading) return <div className="p-8">Loading Inventory...</div>;
@@ -239,174 +311,119 @@ export default function InventoryPage() {
       </div>
 
       {error && !isModalOpen && (
-        <div
-          style={{
-            padding: "1rem",
-            background: "#fee2e2",
-            color: "#dc2626",
-            borderRadius: "0.5rem",
-            marginBottom: "1rem",
-          }}
-        >
-          <strong>Connection Error:</strong> {error}
+        <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
+          {error}
         </div>
       )}
 
       <div className="glass-panel" style={{ overflow: "hidden" }}>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            textAlign: "left",
-          }}
-        >
-          <thead
+        <div style={{ overflowX: "auto" }}>
+          <table
             style={{
-              background: "rgba(0,0,0,0.02)",
-              borderBottom: "1px solid rgba(0,0,0,0.05)",
+              width: "100%",
+              borderCollapse: "collapse",
+              textAlign: "left",
             }}
           >
-            <tr>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                Name
-              </th>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                Type
-              </th>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                SKU
-              </th>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                Stock
-              </th>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                Price
-              </th>
-              <th
-                style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-              >
-                Status
-              </th>
-              <th
-                style={{
-                  padding: "1rem",
-                  fontWeight: 600,
-                  color: "#64748b",
-                  textAlign: "right",
-                }}
-              >
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.length === 0 ? (
+            <thead
+              style={{
+                background: "rgba(0,0,0,0.02)",
+                borderBottom: "1px solid rgba(0,0,0,0.05)",
+              }}
+            >
               <tr>
-                <td
-                  colSpan={7}
-                  style={{
-                    padding: "2rem",
-                    textAlign: "center",
-                    color: "#94a3b8",
-                  }}
-                >
-                  No products found. Add some products!
-                </td>
+                <th style={{ padding: "1rem" }}>Name / SKU</th>
+                <th style={{ padding: "1rem" }}>Categories</th>
+                <th style={{ padding: "1rem" }}>Stock</th>
+                <th style={{ padding: "1rem" }}>Unit Price</th>
+                <th style={{ padding: "1rem", textAlign: "right" }}>Actions</th>
               </tr>
-            ) : (
-              products.map((item: Product) => (
-                <tr
-                  key={item.documentId}
-                  style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-                >
-                  <td style={{ padding: "1rem", fontWeight: 500 }}>
-                    {item.name}
-                  </td>
-                  <td style={{ padding: "1rem" }}>
-                    <span
-                      style={{
-                        padding: "0.25rem 0.75rem",
-                        borderRadius: "999px",
-                        fontSize: "0.75rem",
-                        background:
-                          item.type === "Fuel" ? "#dbeafe" : "#f1f5f9",
-                        color: item.type === "Fuel" ? "#1e40af" : "#475569",
-                      }}
-                    >
-                      {item.type || "General"}
-                    </span>
-                  </td>
+            </thead>
+            <tbody>
+              {products.length === 0 ? (
+                <tr>
                   <td
+                    colSpan={5}
                     style={{
-                      padding: "1rem",
-                      fontFamily: "monospace",
-                      color: "#64748b",
+                      padding: "2rem",
+                      textAlign: "center",
+                      color: "#94a3b8",
                     }}
                   >
-                    {item.sku || "-"}
-                  </td>
-                  <td style={{ padding: "1rem" }}>
-                    {item.stockQuantity} {item.unit}
-                  </td>
-                  <td style={{ padding: "1rem" }}>${item.sellingPrice}</td>
-                  <td style={{ padding: "1rem" }}>
-                    <span
-                      style={{
-                        color:
-                          item.stockQuantity > (item.alertLevel || 10)
-                            ? "#22c55e"
-                            : "#ef4444",
-                        fontSize: "0.875rem",
-                      }}
-                    >
-                      {item.stockQuantity > (item.alertLevel || 10)
-                        ? "In Stock"
-                        : "Low Stock"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "1rem", textAlign: "right" }}>
-                    <button
-                      onClick={() => handleOpenEdit(item)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "#3b82f6",
-                        marginRight: "0.5rem",
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.documentId)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "#ef4444",
-                      }}
-                    >
-                      Delete
-                    </button>
+                    No products found.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                products.map((item) => (
+                  <tr
+                    key={item.documentId}
+                    style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
+                  >
+                    <td style={{ padding: "1rem" }}>
+                      <div style={{ fontWeight: 600 }}>{item.name}</div>
+                      <div
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "#64748b",
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        {item.sku}
+                      </div>
+                    </td>
+                    <td style={{ padding: "1rem" }}>
+                      <div style={{ fontSize: "0.85rem", color: "#1e293b" }}>
+                        {item.category?.name || "N/A"}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                        {item.subCategory?.name
+                          ? `> ${item.subCategory.name}`
+                          : ""}
+                      </div>
+                    </td>
+                    <td style={{ padding: "1rem" }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          color:
+                            item.stockQuantity <= (item.alertLevel || 10)
+                              ? "#ef4444"
+                              : "#22c55e",
+                        }}
+                      >
+                        {item.stockQuantity} {item.baseUnit}
+                      </div>
+                    </td>
+                    <td style={{ padding: "1rem" }}>
+                      <div>Buy: ${item.costPrice}</div>
+                      <div style={{ fontWeight: 600 }}>
+                        Sell: ${item.sellingPrice}
+                      </div>
+                    </td>
+                    <td style={{ padding: "1rem", textAlign: "right" }}>
+                      <button
+                        onClick={() => handleOpenEdit(item)}
+                        className="btn-icon"
+                        style={{ color: "#3b82f6", marginRight: "0.5rem" }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.documentId)}
+                        className="btn-icon"
+                        style={{ color: "#ef4444" }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Product Modal */}
       {isModalOpen && (
         <div
           style={{
@@ -420,17 +437,16 @@ export default function InventoryPage() {
             justifyContent: "center",
             alignItems: "center",
             zIndex: 1000,
-            overflowY: "auto",
             padding: "2rem",
           }}
         >
           <div
+            className="glass-panel"
             style={{
               background: "white",
               padding: "2rem",
-              borderRadius: "1rem",
-              width: "90%",
-              maxWidth: "800px",
+              width: "95%",
+              maxWidth: "900px",
               maxHeight: "90vh",
               overflowY: "auto",
             }}
@@ -439,465 +455,376 @@ export default function InventoryPage() {
               {editingId ? "Edit Product" : "New Product"}
             </h2>
 
-            {error && (
-              <div
-                style={{
-                  padding: "1rem",
-                  background: "#fee2e2",
-                  color: "#dc2626",
-                  borderRadius: "0.5rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {error}
-              </div>
-            )}
-
             <form
               onSubmit={handleSubmit}
-              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1.5rem",
+              }}
             >
-              {/* Basic Information */}
+              {/* Category Hierarchy */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  padding: "1.5rem",
+                  borderRadius: "1rem",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <h3
+                  style={{
+                    fontSize: "0.9rem",
+                    fontWeight: 700,
+                    marginBottom: "1rem",
+                    color: "#475569",
+                  }}
+                >
+                  PRODUCT CLASSIFICATION
+                </h3>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: "1rem",
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">Category</label>
+                    <select
+                      required
+                      className="form-input"
+                      value={formData.category}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
+                    >
+                      <option value="">Select Category</option>
+                      {categories.map((c) => (
+                        <option key={c.documentId} value={c.documentId}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Sub-Category</label>
+                    <select
+                      className="form-input"
+                      disabled={!formData.category}
+                      value={formData.subCategory}
+                      onChange={(e) => handleSubCategoryChange(e.target.value)}
+                    >
+                      <option value="">Select Sub-Category</option>
+                      {subCategories.map((s) => (
+                        <option key={s.documentId} value={s.documentId}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Child-Category</label>
+                    <select
+                      className="form-input"
+                      disabled={!formData.subCategory}
+                      value={formData.childCategory}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          childCategory: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Select Child-Category</option>
+                      {childCategories.map((cc) => (
+                        <option key={cc.documentId} value={cc.documentId}>
+                          {cc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Basic Info */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: "2fr 1fr",
                   gap: "1rem",
                 }}
               >
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Product Name *
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">Product Name *</label>
                   <input
                     required
-                    type="text"
-                    placeholder="e.g., Diesel Premium"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
+                    className="form-input"
+                    style={{ width: "100%" }}
                     value={formData.name}
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
                     }
                   />
                 </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    SKU
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">SKU / Barcode</label>
                   <input
-                    type="text"
-                    placeholder="e.g., PROD-001"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
+                    className="form-input"
+                    style={{ width: "100%" }}
                     value={formData.sku}
                     onChange={(e) =>
                       setFormData({ ...formData, sku: e.target.value })
                     }
                   />
                 </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Type
-                  </label>
-                  <select
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, type: e.target.value })
-                    }
-                  >
-                    <option value="General">General</option>
-                    <option value="Fuel">Fuel</option>
-                    <option value="Lube">Lube</option>
-                    <option value="Service">Service</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Unit
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Liters, pcs, kg"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.unit}
-                    onChange={(e) =>
-                      setFormData({ ...formData, unit: e.target.value })
-                    }
-                  />
-                </div>
               </div>
 
-              {/* Pricing */}
+              {/* Units & Conversion (Universal Design) */}
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr",
-                  gap: "1rem",
+                  background: "#f0f9ff",
+                  padding: "1.5rem",
+                  borderRadius: "1rem",
+                  border: "1px solid #bae6fd",
                 }}
               >
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Cost Price *
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.costPrice || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        costPrice: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Selling Price *
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.sellingPrice || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        sellingPrice: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Margin
-                  </label>
-                  <input
-                    type="text"
-                    readOnly
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                      background: "#f8fafc",
-                    }}
-                    value={
-                      formData.sellingPrice > 0
-                        ? `${(
-                            ((formData.sellingPrice - formData.costPrice) /
-                              formData.sellingPrice) *
-                            100
-                          ).toFixed(1)}%`
-                        : "0%"
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Stock */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "1rem",
-                }}
-              >
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Stock Quantity
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.stockQuantity || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        stockQuantity: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Alert Level
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.alertLevel || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        alertLevel: parseInt(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Product Image */}
-              <div>
-                <label
+                <h3
                   style={{
-                    display: "block",
-                    marginBottom: "0.5rem",
                     fontSize: "0.9rem",
-                    fontWeight: 500,
+                    fontWeight: 700,
+                    marginBottom: "1rem",
+                    color: "#0369a1",
                   }}
                 >
-                  Product Image
-                </label>
+                  UNIT & CONVERSION (e.g. Box {">"} Strip {">"} Tablet)
+                </h3>
                 <div
-                  style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: "1rem",
+                    marginBottom: "1rem",
+                  }}
                 >
-                  {imagePreview && (
-                    <div
-                      style={{
-                        width: "100px",
-                        height: "100px",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "0.5rem",
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        background: "#f8fafc",
-                      }}
-                    >
-                      <Image
-                        src={imagePreview}
-                        alt="Product Preview"
-                        width={100}
-                        height={100}
-                        style={{ objectFit: "contain" }}
-                        unoptimized
-                      />
-                    </div>
-                  )}
+                  <div className="form-group">
+                    <label className="form-label">Purchase Unit</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Box"
+                      value={formData.purchaseUnit}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          purchaseUnit: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Sale Unit</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Strip"
+                      value={formData.saleUnit}
+                      onChange={(e) =>
+                        setFormData({ ...formData, saleUnit: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Base Unit (Smallest)</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Tablet"
+                      value={formData.baseUnit}
+                      onChange={(e) =>
+                        setFormData({ ...formData, baseUnit: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "1.5rem",
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">
+                      How many <strong>{formData.saleUnit}</strong> in one{" "}
+                      <strong>{formData.purchaseUnit}</strong>?
+                    </label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={formData.purchaseToSaleFactor}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          purchaseToSaleFactor: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">
+                      How many <strong>{formData.baseUnit}</strong> in one{" "}
+                      <strong>{formData.saleUnit}</strong>?
+                    </label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={formData.saleToBaseFactor}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          saleToBaseFactor: parseFloat(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing & Stock */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
+                  gap: "1rem",
+                }}
+              >
+                <div className="form-group">
+                  <label className="form-label">Cost / Buy Price</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-input"
+                    value={formData.costPrice}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        costPrice: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Selling Price</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-input"
+                    value={formData.sellingPrice}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        sellingPrice: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">
+                    Stock (in {formData.baseUnit})
+                  </label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={formData.stockQuantity}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        stockQuantity: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Alert Level</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={formData.alertLevel}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        alertLevel: parseInt(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Image & Description */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 2fr",
+                  gap: "1rem",
+                }}
+              >
+                <div>
+                  <label className="form-label">Product Image</label>
                   <input
                     type="file"
-                    accept="image/*"
                     onChange={handleImageChange}
                     style={{ fontSize: "0.8rem" }}
                   />
+                  {imagePreview && (
+                    <img
+                      src={imagePreview}
+                      style={{
+                        width: "100%",
+                        height: "100px",
+                        objectFit: "contain",
+                        marginTop: "0.5rem",
+                        borderRadius: "0.5rem",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description / Notes</label>
+                  <textarea
+                    className="form-input"
+                    rows={4}
+                    style={{ width: "100%" }}
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                  />
                 </div>
               </div>
 
-              {/* Description */}
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "0.5rem",
-                    fontSize: "0.9rem",
-                    fontWeight: 500,
-                  }}
-                >
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Product description..."
-                  style={{
-                    width: "100%",
-                    padding: "0.5rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "0.25rem",
-                    fontFamily: "inherit",
-                  }}
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                />
-              </div>
-
-              {/* Product Attributes */}
-              {attributes.length > 0 && (
-                <div>
-                  <h3
-                    style={{
-                      margin: "0 0 1rem 0",
-                      fontSize: "1rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Product Attributes
-                  </h3>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: "1rem",
-                    }}
-                  >
-                    {attributes.map((attr) => (
-                      <div key={attr.documentId}>
-                        <label
-                          style={{
-                            display: "block",
-                            marginBottom: "0.5rem",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {attr.name}
-                        </label>
-                        <select
-                          style={{
-                            width: "100%",
-                            padding: "0.5rem",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "0.25rem",
-                          }}
-                          value={formData.attributes[attr.name] || ""}
-                          onChange={(e) =>
-                            updateAttribute(attr.name, e.target.value)
-                          }
-                        >
-                          <option value="">Select {attr.name}</option>
-                          {attr.values?.map((val, idx) => (
-                            <option key={idx} value={val}>
-                              {val}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  marginTop: "1rem",
+                  paddingTop: "1.5rem",
+                  borderTop: "1px solid #eee",
+                }}
+              >
                 <button
                   type="submit"
-                  className="btn btn-primary"
                   disabled={isSubmitting}
-                  style={{ flex: 1 }}
+                  className="btn btn-primary"
+                  style={{ flex: 2, padding: "1rem" }}
                 >
-                  {isSubmitting ? "Saving..." : "Save Product"}
+                  {isSubmitting
+                    ? "Saving..."
+                    : editingId
+                    ? "Update Product"
+                    : "Save Product"}
                 </button>
                 <button
                   type="button"
                   className="btn"
-                  style={{ background: "#e2e8f0", flex: 1 }}
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setError("");
-                  }}
+                  style={{ flex: 1 }}
+                  onClick={() => setIsModalOpen(false)}
                 >
                   Cancel
                 </button>

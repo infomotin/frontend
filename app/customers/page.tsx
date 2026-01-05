@@ -8,6 +8,13 @@ interface AddressEntity {
   documentId: string;
   name: string;
   bnName?: string;
+  eligibleForCoins?: boolean;
+}
+
+interface CoinWallet {
+  id: number;
+  documentId: string;
+  balance: number;
 }
 
 interface Customer {
@@ -17,7 +24,8 @@ interface Customer {
   email: string;
   phone: string;
   addressLine: string;
-  customerType: string;
+  customerCategory?: AddressEntity;
+  coinWallet?: CoinWallet;
   creditLimit: number;
   currentBalance: number;
   country?: AddressEntity;
@@ -41,7 +49,7 @@ export default function CustomersPage() {
     email: "",
     phone: "",
     addressLine: "",
-    customerType: "Retail",
+    customerCategory: "",
     creditLimit: 0,
     country: "",
     division: "",
@@ -51,7 +59,8 @@ export default function CustomersPage() {
     zone: "",
   });
 
-  // Address Dropdowns Data
+  // Data for Dropdowns
+  const [customerTypes, setCustomerTypes] = useState<AddressEntity[]>([]);
   const [countries, setCountries] = useState<AddressEntity[]>([]);
   const [divisions, setDivisions] = useState<AddressEntity[]>([]);
   const [districts, setDistricts] = useState<AddressEntity[]>([]);
@@ -61,6 +70,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     loadCustomers();
+    loadCustomerTypes();
     loadInitialAddressData();
   }, []);
 
@@ -73,6 +83,15 @@ export default function CustomersPage() {
       setError(err instanceof Error ? err.message : "Failed to load customers");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCustomerTypes = async () => {
+    try {
+      const res = await fetchAPI("/customer-types?sort=name:ASC");
+      setCustomerTypes(res.data || []);
+    } catch (err) {
+      console.error("Failed to load customer types", err);
     }
   };
 
@@ -155,6 +174,7 @@ export default function CustomersPage() {
           upazila: formData.upazila || null,
           cityCorporation: formData.cityCorporation || null,
           zone: formData.zone || null,
+          customerCategory: formData.customerCategory || null,
         },
       };
 
@@ -179,7 +199,7 @@ export default function CustomersPage() {
       email: customer.email || "",
       phone: customer.phone,
       addressLine: customer.addressLine || "",
-      customerType: customer.customerType,
+      customerCategory: customer.customerCategory?.documentId || "",
       creditLimit: customer.creditLimit,
       country: customer.country?.documentId || "",
       division: customer.division?.documentId || "",
@@ -221,7 +241,7 @@ export default function CustomersPage() {
       email: "",
       phone: "",
       addressLine: "",
-      customerType: "Retail",
+      customerCategory: "",
       creditLimit: 0,
       country: "",
       division: "",
@@ -298,7 +318,7 @@ export default function CustomersPage() {
             Customers
           </h1>
           <p style={{ color: "#64748b", fontSize: "0.95rem" }}>
-            Manage your customer base and credit relationships
+            Manage your customer base and loyalty rewards
           </p>
         </div>
         <button
@@ -387,7 +407,20 @@ export default function CustomersPage() {
                       letterSpacing: "0.025em",
                     }}
                   >
-                    Type
+                    Category
+                  </th>
+                  <th
+                    style={{
+                      padding: "1.25rem 1rem",
+                      fontWeight: 600,
+                      color: "#475569",
+                      fontSize: "0.85rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.025em",
+                      textAlign: "center",
+                    }}
+                  >
+                    Coin Balance
                   </th>
                   <th
                     style={{
@@ -400,19 +433,6 @@ export default function CustomersPage() {
                     }}
                   >
                     Location
-                  </th>
-                  <th
-                    style={{
-                      padding: "1.25rem 1rem",
-                      fontWeight: 600,
-                      color: "#475569",
-                      fontSize: "0.85rem",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.025em",
-                      textAlign: "right",
-                    }}
-                  >
-                    Credit Limit
                   </th>
                   <th
                     style={{
@@ -466,11 +486,6 @@ export default function CustomersPage() {
                         >
                           {customer.phone}
                         </div>
-                        {customer.email && (
-                          <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                            {customer.email}
-                          </div>
-                        )}
                       </td>
                       <td style={{ padding: "1.25rem 1rem" }}>
                         <span
@@ -480,39 +495,53 @@ export default function CustomersPage() {
                             fontSize: "0.75rem",
                             fontWeight: 600,
                             background:
-                              customer.customerType === "Retail"
+                              customer.customerCategory?.name === "Retail"
                                 ? "#eff6ff"
-                                : customer.customerType === "Corporate"
+                                : customer.customerCategory?.name ===
+                                  "Corporate"
                                 ? "#f5f3ff"
-                                : "#ecfdf5",
+                                : "#f8fafc",
                             color:
-                              customer.customerType === "Retail"
+                              customer.customerCategory?.name === "Retail"
                                 ? "#2563eb"
-                                : customer.customerType === "Corporate"
+                                : customer.customerCategory?.name ===
+                                  "Corporate"
                                 ? "#7c3aed"
-                                : "#059669",
+                                : "#475569",
+                            border: "1px solid rgba(0,0,0,0.05)",
                           }}
                         >
-                          {customer.customerType}
+                          {customer.customerCategory?.name || "General"}
                         </span>
                       </td>
-                      <td style={{ padding: "1.25rem 1rem" }}>
-                        <div style={{ fontSize: "0.9rem", color: "#475569" }}>
-                          {customer.district?.name || "N/A"}
-                        </div>
-                        <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                          {customer.division?.name || "N/A"}
+                      <td
+                        style={{ padding: "1.25rem 1rem", textAlign: "center" }}
+                      >
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                            padding: "0.4rem 0.8rem",
+                            background: "#fffbeb",
+                            color: "#92400e",
+                            borderRadius: "0.75rem",
+                            fontWeight: 700,
+                            fontSize: "0.9rem",
+                            border: "1px solid #fef3c7",
+                          }}
+                        >
+                          <span style={{ fontSize: "1.1rem" }}>🪙</span>
+                          {customer.coinWallet?.balance || 0}
                         </div>
                       </td>
-                      <td
-                        style={{
-                          padding: "1.25rem 1rem",
-                          textAlign: "right",
-                          fontWeight: 600,
-                          color: "#1e293b",
-                        }}
-                      >
-                        ${customer.creditLimit.toLocaleString()}
+                      <td style={{ padding: "1.25rem 1rem" }}>
+                        <div style={{ fontSize: "0.85rem", color: "#475569" }}>
+                          {customer.district?.name || "N/A"}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                          {customer.division?.name || "N/A"}
+                        </div>
                       </td>
                       <td
                         style={{ padding: "1.25rem 1rem", textAlign: "right" }}
@@ -629,7 +658,6 @@ export default function CustomersPage() {
                 gap: "1.5rem",
               }}
             >
-              {/* Basic Info Section */}
               <div
                 style={{
                   display: "grid",
@@ -703,10 +731,9 @@ export default function CustomersPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Customer Type</label>
+                  <label className="form-label">Customer Category</label>
                   <select
                     className="form-input"
-                    value={formData.customerType}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
@@ -714,13 +741,21 @@ export default function CustomersPage() {
                       border: "1px solid #e2e8f0",
                       background: "white",
                     }}
+                    value={formData.customerCategory}
                     onChange={(e) =>
-                      setFormData({ ...formData, customerType: e.target.value })
+                      setFormData({
+                        ...formData,
+                        customerCategory: e.target.value,
+                      })
                     }
                   >
-                    <option value="Retail">Retail</option>
-                    <option value="Corporate">Corporate</option>
-                    <option value="Government">Government</option>
+                    <option value="">Select Category</option>
+                    {customerTypes.map((type) => (
+                      <option key={type.id} value={type.documentId}>
+                        {type.name}{" "}
+                        {type.eligibleForCoins ? "(Eligible for Coins)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -990,7 +1025,7 @@ export default function CustomersPage() {
                       border: "1px solid #e2e8f0",
                       fontSize: "0.85rem",
                     }}
-                    placeholder="House No, Road No, Flat No..."
+                    placeholder="House No, Road No, Area..."
                     value={formData.addressLine}
                     onChange={(e) =>
                       setFormData({ ...formData, addressLine: e.target.value })

@@ -15,11 +15,18 @@ const menuItems = [
   { name: "Inventory", path: "/inventory" },
   { name: "Sales", path: "/sales" },
   { name: "Customers", path: "/customers" },
+  { name: "Customer Types", path: "/customers/types" },
   { name: "Suppliers", path: "/suppliers" },
   { name: "HR & Payroll", path: "/hr" },
   { name: "Trial Balance", path: "/reports/trial-balance" },
   { name: "Balance Sheet", path: "/reports/balance-sheet" },
   { name: "Settings", path: "/settings" },
+  { name: "Product Category", path: "/settings/product-categories" },
+  { name: "Product Sub-Category", path: "/settings/product-sub-categories" },
+  {
+    name: "Product Child-Category",
+    path: "/settings/product-child-categories",
+  },
   { name: "Product Attributes", path: "/settings/product-attributes" },
   { name: "Address Setup", path: "/settings/address" },
 ];
