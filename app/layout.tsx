@@ -2,6 +2,7 @@
 
 import "./globals.css";
 import Sidebar from "../components/Sidebar";
+import Header from "../components/Header";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "../context/AuthContext";
 import { SettingsProvider } from "../context/SettingsContext";
@@ -17,7 +18,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="layout-container">
       {!isLoginPage && <Sidebar />}
-      <main className={isLoginPage ? "" : "main-content"}>{children}</main>
+      <div className={isLoginPage ? "" : "main-content-wrapper"}>
+        {!isLoginPage && <Header />}
+        <main className={isLoginPage ? "" : "main-content"}>{children}</main>
+      </div>
     </div>
   );
 }

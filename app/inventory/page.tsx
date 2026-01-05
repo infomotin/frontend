@@ -32,6 +32,21 @@ interface Manufacturer {
   name: string;
 }
 
+interface Variant {
+  id?: number;
+  documentId?: string;
+  variantName: string;
+  sku: string;
+  price: number;
+  costPrice: number;
+  stockQuantity: number;
+  images?: StrapiImage[];
+  // For UI state tracking
+  imageFiles?: File[];
+  imagePreviews?: string[];
+  attributeValues: Record<string, string>;
+}
+
 interface Product {
   documentId: string;
   name: string;
@@ -48,11 +63,13 @@ interface Product {
   attributeValues?: Record<string, string>;
   alertLevel?: number;
   image?: StrapiImage | null;
+  gallery?: StrapiImage[];
   category?: Category;
   subCategory?: Category;
   childCategory?: Category;
   brand?: Brand;
   manufacturer?: Manufacturer;
+  variants?: Variant[];
 }
 
 export default function InventoryPage() {
@@ -69,6 +86,8 @@ export default function InventoryPage() {
   // Media State
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -96,6 +115,16 @@ export default function InventoryPage() {
     description: "",
     attributeValues: {} as Record<string, string>,
     image: null as StrapiImage | null,
+    gallery: [] as StrapiImage[],
+    variants: [] as Variant[],
+  });
+
+  // Quick Attribute Modal State
+  const [isAttrModalOpen, setIsAttrModalOpen] = useState(false);
+  const [attrFormData, setAttrFormData] = useState({
+    name: "",
+    inputType: "Text",
+    values: [] as string[],
   });
 
   const loadProducts = async () => {
@@ -189,10 +218,14 @@ export default function InventoryPage() {
       description: "",
       attributeValues: {},
       image: null,
+      gallery: [],
+      variants: [],
     });
     setEditingId(null);
     setImageFile(null);
     setImagePreview("");
+    setGalleryFiles([]);
+    setGalleryPreviews([]);
     setSubCategories([]);
     setChildCategories([]);
   };
@@ -207,6 +240,24 @@ export default function InventoryPage() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const newFiles = [...galleryFiles, ...files];
+      setGalleryFiles(newFiles);
+
+      const newPreviews = files.map((file) => URL.createObjectURL(file));
+      setGalleryPreviews([...galleryPreviews, ...newPreviews]);
+    }
+  };
+
+  const removeGalleryImage = (index: number) => {
+    const newFiles = galleryFiles.filter((_, i) => i !== index);
+    const newPreviews = galleryPreviews.filter((_, i) => i !== index);
+    setGalleryFiles(newFiles);
+    setGalleryPreviews(newPreviews);
   };
 
   const handleOpenCreate = () => {
@@ -235,6 +286,8 @@ export default function InventoryPage() {
       description: product.description || "",
       attributeValues: product.attributeValues || {},
       image: product.image || null,
+      gallery: product.gallery || [],
+      variants: product.variants || [],
     });
     setEditingId(product.documentId);
     if (product.image?.url) {
@@ -243,13 +296,89 @@ export default function InventoryPage() {
       setImagePreview("");
     }
 
+    if (product.gallery && product.gallery.length > 0) {
+      setGalleryPreviews(
+        product.gallery.map((img: StrapiImage) => `${STRAPI_URL}${img.url}`)
+      );
+    } else {
+      setGalleryPreviews([]);
+    }
+
     if (product.category?.documentId)
       loadSubCategories(product.category.documentId);
     if (product.subCategory?.documentId)
       loadChildCategories(product.subCategory.documentId);
 
     setImageFile(null);
+    setGalleryFiles([]);
     setIsModalOpen(true);
+  };
+
+  const addVariant = () => {
+    setFormData({
+      ...formData,
+      variants: [
+        ...formData.variants,
+        {
+          variantName: "",
+          sku: "",
+          price: formData.sellingPrice,
+          costPrice: formData.costPrice,
+          stockQuantity: 0,
+          attributeValues: {},
+          imageFiles: [],
+          imagePreviews: [],
+        },
+      ],
+    });
+  };
+
+  const updateVariant = (index: number, field: string, value: any) => {
+    const newVariants = [...formData.variants];
+    newVariants[index] = { ...newVariants[index], [field]: value };
+    setFormData({ ...formData, variants: newVariants });
+  };
+
+  const handleVariantGalleryChange = (
+    variantIndex: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const newVariants = [...formData.variants];
+      const variant = newVariants[variantIndex];
+
+      const currentFiles = variant.imageFiles || [];
+      const currentPreviews = variant.imagePreviews || [];
+
+      variant.imageFiles = [...currentFiles, ...files];
+      variant.imagePreviews = [
+        ...currentPreviews,
+        ...files.map((f) => URL.createObjectURL(f)),
+      ];
+
+      setFormData({ ...formData, variants: newVariants });
+    }
+  };
+
+  const removeVariantGalleryImage = (
+    variantIndex: number,
+    imgIndex: number
+  ) => {
+    const newVariants = [...formData.variants];
+    const variant = newVariants[variantIndex];
+
+    variant.imageFiles = variant.imageFiles?.filter((_, i) => i !== imgIndex);
+    variant.imagePreviews = variant.imagePreviews?.filter(
+      (_, i) => i !== imgIndex
+    );
+
+    setFormData({ ...formData, variants: newVariants });
+  };
+
+  const removeVariant = (index: number) => {
+    const newVariants = formData.variants.filter((_, i) => i !== index);
+    setFormData({ ...formData, variants: newVariants });
   };
 
   const handleDelete = async (documentId: string) => {
@@ -268,32 +397,97 @@ export default function InventoryPage() {
     setError("");
 
     try {
+      // 1. Upload Main Image
       let imageId = formData.image?.id;
       if (imageFile) {
         const uploaded = await uploadFile(imageFile);
         imageId = uploaded.id;
       }
 
-      const payload = {
-        ...formData,
-        image: imageId || null,
+      // 2. Upload Gallery Images
+      const galleryIds = formData.gallery?.map((img) => img.id) || [];
+      if (galleryFiles.length > 0) {
+        for (const file of galleryFiles) {
+          const uploaded = await uploadFile(file);
+          galleryIds.push(uploaded.id);
+        }
+      }
+
+      // 3. Prepare Product Payload
+      const productPayload = {
+        name: formData.name,
+        sku: formData.sku,
         category: formData.category || null,
         subCategory: formData.subCategory || null,
         childCategory: formData.childCategory || null,
         brand: formData.brand || null,
         manufacturer: formData.manufacturer || null,
+        baseUnit: formData.baseUnit,
+        purchaseUnit: formData.purchaseUnit,
+        saleUnit: formData.saleUnit,
+        purchaseToSaleFactor: formData.purchaseToSaleFactor,
+        saleToBaseFactor: formData.saleToBaseFactor,
+        costPrice: formData.costPrice,
+        sellingPrice: formData.sellingPrice,
+        stockQuantity: formData.stockQuantity,
+        alertLevel: formData.alertLevel,
+        description: formData.description,
+        attributeValues: formData.attributeValues,
+        image: imageId || null,
+        gallery: galleryIds,
       };
 
+      let productDocId: string;
+
       if (editingId) {
-        await fetchAPI(`/products/${editingId}`, {
+        const res = await fetchAPI(`/products/${editingId}`, {
           method: "PUT",
-          body: JSON.stringify({ data: payload }),
+          body: JSON.stringify({ data: productPayload }),
         });
+        productDocId = res.data.documentId;
       } else {
-        await fetchAPI("/products", {
+        const res = await fetchAPI("/products", {
           method: "POST",
-          body: JSON.stringify({ data: payload }),
+          body: JSON.stringify({ data: productPayload }),
         });
+        productDocId = res.data.documentId;
+      }
+
+      // 4. Handle Variants
+      if (formData.variants.length > 0) {
+        for (const variant of formData.variants) {
+          // Upload variant images
+          const varImageIds = variant.images?.map((img) => img.id) || [];
+          if (variant.imageFiles && variant.imageFiles.length > 0) {
+            for (const vfile of variant.imageFiles) {
+              const vuploaded = await uploadFile(vfile);
+              varImageIds.push(vuploaded.id);
+            }
+          }
+
+          const variantPayload = {
+            variantName: variant.variantName,
+            sku: variant.sku,
+            price: variant.price,
+            costPrice: variant.costPrice,
+            stockQuantity: variant.stockQuantity,
+            attributeValues: variant.attributeValues,
+            images: varImageIds,
+            product: productDocId, // Link to product
+          };
+
+          if (variant.documentId) {
+            await fetchAPI(`/product-variants/${variant.documentId}`, {
+              method: "PUT",
+              body: JSON.stringify({ data: variantPayload }),
+            });
+          } else {
+            await fetchAPI("/product-variants", {
+              method: "POST",
+              body: JSON.stringify({ data: variantPayload }),
+            });
+          }
+        }
       }
 
       setIsModalOpen(false);
@@ -319,6 +513,53 @@ export default function InventoryPage() {
         [name]: value,
       },
     });
+  };
+
+  const handleQuickAttrSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.category) {
+      alert("Please select a category first to link this attribute.");
+      return;
+    }
+    try {
+      // 1. Create Attribute
+      const attrRes = await fetchAPI("/product-attributes", {
+        method: "POST",
+        body: JSON.stringify({
+          data: {
+            name: attrFormData.name,
+            inputType: attrFormData.inputType,
+            values:
+              attrFormData.inputType === "Select"
+                ? attrFormData.values.filter((v) => v.trim() !== "")
+                : null,
+          },
+        }),
+      });
+
+      // 2. Link to Category
+      const currentCat = categories.find(
+        (c) => c.documentId === formData.category
+      );
+      const existingAttrs =
+        currentCat?.attributes?.map((a) => a.documentId) || [];
+
+      await fetchAPI(`/product-categories/${formData.category}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          data: {
+            attributes: [...existingAttrs, attrRes.data.documentId],
+          },
+        }),
+      });
+
+      // 3. Refresh
+      await loadCategories();
+      setIsAttrModalOpen(false);
+      setAttrFormData({ name: "", inputType: "Text", values: [] });
+    } catch (err: any) {
+      alert("Failed to add attribute: " + err.message);
+    }
   };
 
   if (loading) return <div className="p-8">Loading Inventory...</div>;
@@ -665,13 +906,20 @@ export default function InventoryPage() {
               </div>
 
               {/* Part 2: Dynamic Attributes */}
-              {relevantAttributes.length > 0 && (
+              <div
+                style={{
+                  background: "#fffbeb",
+                  padding: "1.5rem",
+                  borderRadius: "1rem",
+                  border: "1px solid #fef3c7",
+                }}
+              >
                 <div
                   style={{
-                    background: "#fffbeb",
-                    padding: "1.5rem",
-                    borderRadius: "1rem",
-                    border: "1px solid #fef3c7",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "1rem",
                   }}
                 >
                   <h3
@@ -680,11 +928,31 @@ export default function InventoryPage() {
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
                       color: "#b45309",
-                      marginBottom: "1rem",
+                      margin: 0,
                     }}
                   >
                     2. Specific Attributes (Dynamic)
                   </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsAttrModalOpen(true)}
+                    disabled={!formData.category}
+                    style={{
+                      padding: "0.25rem 0.75rem",
+                      background: "#f59e0b",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "0.5rem",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                      opacity: formData.category ? 1 : 0.5,
+                    }}
+                  >
+                    + Add New Input Field
+                  </button>
+                </div>
+
+                {relevantAttributes.length > 0 ? (
                   <div
                     style={{
                       display: "grid",
@@ -729,8 +997,21 @@ export default function InventoryPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#92400e",
+                      fontSize: "0.85rem",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {formData.category
+                      ? "No specific attributes linked to this category yet. Click '+' to add one."
+                      : "Please select a category above to see or add specific attributes."}
+                  </div>
+                )}
+              </div>
 
               {/* Part 3: Basic Details */}
               <div
@@ -764,7 +1045,7 @@ export default function InventoryPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Image</label>
+                <label className="form-label">Main Image</label>
                 <input
                   type="file"
                   onChange={handleImageChange}
@@ -772,21 +1053,87 @@ export default function InventoryPage() {
                   accept="image/*"
                 />
                 {imagePreview && (
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
+                  <div
                     style={{
                       marginTop: "0.5rem",
+                      position: "relative",
                       width: "100px",
                       height: "100px",
-                      objectFit: "cover",
-                      borderRadius: "0.5rem",
                     }}
-                  />
+                  >
+                    <Image
+                      src={imagePreview}
+                      alt="Preview"
+                      fill
+                      style={{ objectFit: "cover", borderRadius: "0.5rem" }}
+                      unoptimized
+                    />
+                  </div>
                 )}
               </div>
 
-              {/* Part 4: Units & Stock */}
+              {/* Gallery Images */}
+              <div className="form-group">
+                <label className="form-label">Gallery Images (Multi)</label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={handleGalleryChange}
+                  className="form-input"
+                  accept="image/*"
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "0.5rem",
+                    marginTop: "0.5rem",
+                  }}
+                >
+                  {galleryPreviews.map((preview, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        position: "relative",
+                        width: "80px",
+                        height: "80px",
+                      }}
+                    >
+                      <Image
+                        src={preview}
+                        alt={`Gallery ${idx}`}
+                        fill
+                        style={{ objectFit: "cover", borderRadius: "0.5rem" }}
+                        unoptimized
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeGalleryImage(idx)}
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          background: "#ef4444",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "50%",
+                          width: "20px",
+                          height: "20px",
+                          cursor: "pointer",
+                          fontSize: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div
                 style={{
                   display: "grid",
@@ -833,7 +1180,7 @@ export default function InventoryPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Initial Stock</label>
+                  <label className="form-label">Total Stock</label>
                   <input
                     type="number"
                     className="form-input"
@@ -846,6 +1193,269 @@ export default function InventoryPage() {
                     }
                   />
                 </div>
+              </div>
+
+              {/* Part 5: Product Variants */}
+              <div
+                style={{
+                  background: "#f0f9ff",
+                  padding: "1.5rem",
+                  borderRadius: "1rem",
+                  border: "1px solid #e0f2fe",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "0.85rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      color: "#0369a1",
+                      margin: 0,
+                    }}
+                  >
+                    5. Product Variants (Optional)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={addVariant}
+                    className="btn"
+                    style={{
+                      padding: "0.4rem 1rem",
+                      fontSize: "0.8rem",
+                      background: "#0ea5e9",
+                      color: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <span>+</span> Add Variant
+                  </button>
+                </div>
+
+                {formData.variants.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "1.5rem",
+                    }}
+                  >
+                    {formData.variants.map((v, vIdx) => (
+                      <div
+                        key={vIdx}
+                        style={{
+                          background: "white",
+                          padding: "1.5rem",
+                          borderRadius: "1rem",
+                          border: "1px solid #bae6fd",
+                          position: "relative",
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => removeVariant(vIdx)}
+                          style={{
+                            position: "absolute",
+                            top: "1rem",
+                            right: "1rem",
+                            color: "#ef4444",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Remove
+                        </button>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr 1fr",
+                            gap: "1rem",
+                            marginBottom: "1rem",
+                          }}
+                        >
+                          <div className="form-group">
+                            <label className="form-label">
+                              Variant Name (e.g. Red, XL)
+                            </label>
+                            <input
+                              className="form-input"
+                              value={v.variantName}
+                              onChange={(e) =>
+                                updateVariant(
+                                  vIdx,
+                                  "variantName",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Variant SKU</label>
+                            <input
+                              className="form-input"
+                              value={v.sku}
+                              onChange={(e) =>
+                                updateVariant(vIdx, "sku", e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Variant Stock</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={v.stockQuantity}
+                              onChange={(e) =>
+                                updateVariant(
+                                  vIdx,
+                                  "stockQuantity",
+                                  parseFloat(e.target.value)
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "1rem",
+                            marginBottom: "1rem",
+                          }}
+                        >
+                          <div className="form-group">
+                            <label className="form-label">Selling Price</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={v.price}
+                              onChange={(e) =>
+                                updateVariant(
+                                  vIdx,
+                                  "price",
+                                  parseFloat(e.target.value)
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Cost Price</label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              value={v.costPrice}
+                              onChange={(e) =>
+                                updateVariant(
+                                  vIdx,
+                                  "costPrice",
+                                  parseFloat(e.target.value)
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        {/* Variant Gallery */}
+                        <div className="form-group">
+                          <label className="form-label">
+                            Variant Images (Multi)
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            onChange={(e) =>
+                              handleVariantGalleryChange(vIdx, e)
+                            }
+                            className="form-input"
+                            accept="image/*"
+                          />
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "0.5rem",
+                              marginTop: "0.5rem",
+                            }}
+                          >
+                            {v.imagePreviews?.map((pv, pIdx) => (
+                              <div
+                                key={pIdx}
+                                style={{
+                                  position: "relative",
+                                  width: "60px",
+                                  height: "60px",
+                                }}
+                              >
+                                <Image
+                                  src={pv}
+                                  alt=""
+                                  fill
+                                  style={{
+                                    objectFit: "cover",
+                                    borderRadius: "0.25rem",
+                                  }}
+                                  unoptimized
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeVariantGalleryImage(vIdx, pIdx)
+                                  }
+                                  style={{
+                                    position: "absolute",
+                                    top: -5,
+                                    right: -5,
+                                    background: "rgba(0,0,0,0.6)",
+                                    color: "white",
+                                    border: "none",
+                                    borderRadius: "50%",
+                                    width: "16px",
+                                    height: "16px",
+                                    cursor: "pointer",
+                                    fontSize: "8px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#0369a1",
+                      fontSize: "0.85rem",
+                      fontStyle: "italic",
+                      padding: "1rem",
+                    }}
+                  >
+                    No variants added. Click '+ Add Variant' to create
+                    variations.
+                  </div>
+                )}
               </div>
 
               <div
@@ -869,6 +1479,165 @@ export default function InventoryPage() {
                   className="btn"
                   style={{ flex: 1 }}
                   onClick={() => setIsModalOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Quick Attribute Modal */}
+      {isAttrModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1100,
+          }}
+        >
+          <div
+            className="glass-panel slide-up"
+            style={{
+              background: "white",
+              padding: "2rem",
+              width: "90%",
+              maxWidth: "400px",
+              boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)",
+            }}
+          >
+            <h3 style={{ marginBottom: "1.5rem", color: "#1e293b" }}>
+              Quick Add Attribute
+            </h3>
+            <form
+              onSubmit={handleQuickAttrSave}
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
+              <div className="form-group">
+                <label className="form-label">Attribute Name</label>
+                <input
+                  required
+                  placeholder="e.g. Voltage, Engine No"
+                  className="form-input"
+                  value={attrFormData.name}
+                  onChange={(e) =>
+                    setAttrFormData({ ...attrFormData, name: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Input Type</label>
+                <select
+                  className="form-input"
+                  value={attrFormData.inputType}
+                  onChange={(e) =>
+                    setAttrFormData({
+                      ...attrFormData,
+                      inputType: e.target.value,
+                    })
+                  }
+                >
+                  <option value="Text">Text</option>
+                  <option value="Number">Number</option>
+                  <option value="Date">Date (e.g. Expiry)</option>
+                  <option value="Select">Select (Dropdown)</option>
+                  <option value="Boolean">Yes/No</option>
+                </select>
+              </div>
+
+              {attrFormData.inputType === "Select" && (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    <label className="form-label">Options</label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAttrFormData({
+                          ...attrFormData,
+                          values: [...attrFormData.values, ""],
+                        })
+                      }
+                      style={{
+                        fontSize: "0.7rem",
+                        padding: "0.2rem 0.5rem",
+                        background: "#e0e7ff",
+                        border: "none",
+                        borderRadius: "0.25rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+                  {attrFormData.values.map((v, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        gap: "0.5rem",
+                        marginBottom: "0.4rem",
+                      }}
+                    >
+                      <input
+                        className="form-input"
+                        style={{ flex: 1 }}
+                        value={v}
+                        onChange={(e) => {
+                          const next = [...attrFormData.values];
+                          next[i] = e.target.value;
+                          setAttrFormData({ ...attrFormData, values: next });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAttrFormData({
+                            ...attrFormData,
+                            values: attrFormData.values.filter(
+                              (_, idx) => idx !== i
+                            ),
+                          })
+                        }
+                        style={{
+                          color: "red",
+                          border: "none",
+                          background: "none",
+                          fontSize: "1.2rem",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                >
+                  Add & Link
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ flex: 1, background: "#f1f5f9" }}
+                  onClick={() => setIsAttrModalOpen(false)}
                 >
                   Cancel
                 </button>

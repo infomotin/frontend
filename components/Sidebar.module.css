@@ -10,20 +10,44 @@
   display: flex;
   flex-direction: column;
   z-index: 50;
+  overflow: hidden;
 }
 
-.logo {
-  font-size: 1.5rem;
-  font-weight: 800;
+.logoWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   margin-bottom: 2.5rem;
+}
+
+.companyName {
+  font-size: 1.25rem;
+  font-weight: 800;
   color: var(--secondary);
   letter-spacing: -0.025em;
+  text-transform: uppercase;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+  margin-bottom: 1rem;
+  padding-right: 0.5rem;
+}
+
+/* Custom Scrollbar for Sidebar */
+.nav::-webkit-scrollbar {
+  width: 4px;
+}
+.nav::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+.nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
 }
 
 .link {

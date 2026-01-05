@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchAPI } from "../../../lib/api";
+import Image from "next/image";
+import { fetchAPI, uploadFile, STRAPI_URL } from "../../../lib/api";
+
+interface StrapiImage {
+  id: number;
+  url: string;
+}
 
 interface ProductManufacturer {
   id: number;
@@ -9,6 +15,7 @@ interface ProductManufacturer {
   name: string;
   address: string;
   contactNumber: string;
+  logo?: StrapiImage | null;
 }
 
 export default function ProductManufacturersPage() {
@@ -17,11 +24,17 @@ export default function ProductManufacturersPage() {
   const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Media State
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>("");
 
   const [formData, setFormData] = useState({
     name: "",
     address: "",
     contactNumber: "",
+    logo: null as StrapiImage | null,
   });
 
   useEffect(() => {
@@ -31,7 +44,9 @@ export default function ProductManufacturersPage() {
   const loadManufacturers = async () => {
     try {
       setLoading(true);
-      const res = await fetchAPI("/product-manufacturers?sort=name:ASC");
+      const res = await fetchAPI(
+        "/product-manufacturers?populate=*&sort=name:ASC"
+      );
       setManufacturers(res.data || []);
     } catch (err: any) {
       setError(err.message || "Failed to load manufacturers");
@@ -40,9 +55,40 @@ export default function ProductManufacturersPage() {
     }
   };
 
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: "", address: "", contactNumber: "", logo: null });
+    setLogoFile(null);
+    setLogoPreview("");
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoFile(file);
+        setLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
+      let logoId = formData.logo?.id;
+      if (logoFile) {
+        const uploaded = await uploadFile(logoFile);
+        logoId = uploaded.id;
+      }
+
+      const payload = {
+        ...formData,
+        logo: logoId || null,
+      };
+
       const method = editingId ? "PUT" : "POST";
       const path = editingId
         ? `/product-manufacturers/${editingId}`
@@ -50,15 +96,16 @@ export default function ProductManufacturersPage() {
 
       await fetchAPI(path, {
         method,
-        body: JSON.stringify({ data: formData }),
+        body: JSON.stringify({ data: payload }),
       });
 
       setIsModalOpen(false);
-      setEditingId(null);
-      setFormData({ name: "", address: "", contactNumber: "" });
+      resetForm();
       loadManufacturers();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -68,7 +115,14 @@ export default function ProductManufacturersPage() {
       name: m.name,
       address: m.address || "",
       contactNumber: m.contactNumber || "",
+      logo: m.logo || null,
     });
+    if (m.logo?.url) {
+      setLogoPreview(`${STRAPI_URL}${m.logo.url}`);
+    } else {
+      setLogoPreview("");
+    }
+    setLogoFile(null);
     setIsModalOpen(true);
   };
 
@@ -100,8 +154,7 @@ export default function ProductManufacturersPage() {
         <button
           className="btn btn-primary"
           onClick={() => {
-            setEditingId(null);
-            setFormData({ name: "", address: "", contactNumber: "" });
+            resetForm();
             setIsModalOpen(true);
           }}
         >
@@ -127,6 +180,7 @@ export default function ProductManufacturersPage() {
                   borderBottom: "1px solid rgba(0,0,0,0.05)",
                 }}
               >
+                <th style={{ padding: "1rem", textAlign: "left" }}>Logo</th>
                 <th style={{ padding: "1rem", textAlign: "left" }}>Name</th>
                 <th style={{ padding: "1rem", textAlign: "left" }}>Address</th>
                 <th style={{ padding: "1rem", textAlign: "left" }}>Contact</th>
@@ -139,6 +193,36 @@ export default function ProductManufacturersPage() {
                   key={m.documentId}
                   style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}
                 >
+                  <td style={{ padding: "1rem" }}>
+                    {m.logo?.url ? (
+                      <Image
+                        src={`${STRAPI_URL}${m.logo.url}`}
+                        alt={m.name}
+                        width={40}
+                        height={40}
+                        style={{
+                          borderRadius: "0.25rem",
+                          objectFit: "contain",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          background: "#f1f5f9",
+                          borderRadius: "0.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.7rem",
+                          color: "#94a3b8",
+                        }}
+                      >
+                        N/A
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: "1rem", fontWeight: 600 }}>{m.name}</td>
                   <td style={{ padding: "1rem", color: "#64748b" }}>
                     {m.address || "N/A"}
@@ -233,13 +317,49 @@ export default function ProductManufacturersPage() {
                   }
                 />
               </div>
+
+              {/* Logo Upload */}
+              <div className="form-group">
+                <label className="form-label">Manufacturer Logo</label>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+                >
+                  {logoPreview && (
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "60px",
+                        height: "60px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "0.5rem",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Image
+                        src={logoPreview}
+                        alt="Preview"
+                        fill
+                        style={{ objectFit: "contain" }}
+                        unoptimized
+                      />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="btn btn-primary"
                   style={{ flex: 1 }}
                 >
-                  Save
+                  {isSubmitting ? "Saving..." : "Save"}
                 </button>
                 <button
                   type="button"

@@ -1,13 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchAPI } from "../../../lib/api";
+import Image from "next/image";
+import { fetchAPI, uploadFile, STRAPI_URL } from "../../../lib/api";
+
+interface StrapiImage {
+  id: number;
+  url: string;
+}
 
 interface ProductBrand {
   id: number;
   documentId: string;
   name: string;
   description: string;
+  logo?: StrapiImage | null;
 }
 
 export default function ProductBrandsPage() {
@@ -16,10 +23,16 @@ export default function ProductBrandsPage() {
   const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Media State
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>("");
 
   const [formData, setFormData] = useState({
     name: "",
     description: "",
+    logo: null as StrapiImage | null,
   });
 
   useEffect(() => {
@@ -29,7 +42,7 @@ export default function ProductBrandsPage() {
   const loadBrands = async () => {
     try {
       setLoading(true);
-      const res = await fetchAPI("/product-brands?sort=name:ASC");
+      const res = await fetchAPI("/product-brands?populate=*&sort=name:ASC");
       setBrands(res.data || []);
     } catch (err: any) {
       setError(err.message);
@@ -38,9 +51,34 @@ export default function ProductBrandsPage() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoFile(file);
+        setLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
+      let logoId = formData.logo?.id;
+      if (logoFile) {
+        const uploaded = await uploadFile(logoFile);
+        logoId = uploaded.id;
+      }
+
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        logo: logoId || null,
+      };
+
       const method = editingId ? "PUT" : "POST";
       const path = editingId
         ? `/product-brands/${editingId}`
@@ -48,16 +86,24 @@ export default function ProductBrandsPage() {
 
       await fetchAPI(path, {
         method,
-        body: JSON.stringify({ data: formData }),
+        body: JSON.stringify({ data: payload }),
       });
 
       setIsModalOpen(false);
-      setEditingId(null);
-      setFormData({ name: "", description: "" });
+      resetForm();
       loadBrands();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: "", description: "", logo: null });
+    setLogoFile(null);
+    setLogoPreview("");
   };
 
   const handleEdit = (brand: ProductBrand) => {
@@ -65,7 +111,14 @@ export default function ProductBrandsPage() {
     setFormData({
       name: brand.name,
       description: brand.description || "",
+      logo: brand.logo || null,
     });
+    if (brand.logo?.url) {
+      setLogoPreview(`${STRAPI_URL}${brand.logo.url}`);
+    } else {
+      setLogoPreview("");
+    }
+    setLogoFile(null);
     setIsModalOpen(true);
   };
 
@@ -95,8 +148,7 @@ export default function ProductBrandsPage() {
         <button
           className="btn btn-primary"
           onClick={() => {
-            setEditingId(null);
-            setFormData({ name: "", description: "" });
+            resetForm();
             setIsModalOpen(true);
           }}
         >
@@ -122,6 +174,7 @@ export default function ProductBrandsPage() {
                   borderBottom: "1px solid rgba(0,0,0,0.05)",
                 }}
               >
+                <th style={{ padding: "1rem", textAlign: "left" }}>Logo</th>
                 <th style={{ padding: "1rem", textAlign: "left" }}>Name</th>
                 <th style={{ padding: "1rem", textAlign: "left" }}>
                   Description
@@ -135,6 +188,36 @@ export default function ProductBrandsPage() {
                   key={brand.documentId}
                   style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}
                 >
+                  <td style={{ padding: "1rem" }}>
+                    {brand.logo?.url ? (
+                      <Image
+                        src={`${STRAPI_URL}${brand.logo.url}`}
+                        alt={brand.name}
+                        width={40}
+                        height={40}
+                        style={{
+                          borderRadius: "0.25rem",
+                          objectFit: "contain",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          background: "#f1f5f9",
+                          borderRadius: "0.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.7rem",
+                          color: "#94a3b8",
+                        }}
+                      >
+                        No Logo
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: "1rem", fontWeight: 600 }}>
                     {brand.name}
                   </td>
@@ -217,13 +300,49 @@ export default function ProductBrandsPage() {
                   }
                 />
               </div>
+
+              {/* Logo Upload */}
+              <div className="form-group">
+                <label className="form-label">Brand Logo</label>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+                >
+                  {logoPreview && (
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "60px",
+                        height: "60px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "0.5rem",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Image
+                        src={logoPreview}
+                        alt="Preview"
+                        fill
+                        style={{ objectFit: "contain" }}
+                        unoptimized
+                      />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
                 <button
                   type="submit"
+                  disabled={isSubmitting}
                   className="btn btn-primary"
                   style={{ flex: 1 }}
                 >
-                  Save
+                  {isSubmitting ? "Saving..." : "Save"}
                 </button>
                 <button
                   type="button"

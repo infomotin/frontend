@@ -40,17 +40,16 @@ export default function Sidebar() {
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.logo}>
-        {settings.logoUrl ? (
+      <div className={styles.logoWrapper}>
+        <div className={styles.companyName}>{settings.siteName}</div>
+        {settings.logoUrl && (
           <Image
             src={settings.logoUrl}
-            alt={settings.siteName}
+            alt="Logo"
             width={150}
             height={40}
             style={{ objectFit: "contain", maxHeight: "40px" }}
           />
-        ) : (
-          settings.siteName
         )}
       </div>
 
