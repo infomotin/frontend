@@ -21,7 +21,7 @@ export function removeAuthToken() {
 
 export async function fetchAPI(path: string, options: RequestInit = {}) {
   const token = getAuthToken();
-  const defaultHeaders: any = {
+  const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
@@ -43,20 +43,53 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
     const response = await fetch(requestUrl, mergedOptions);
     
     if (!response.ok) {
-        // Handle 401 Unauthorized globally if needed (e.g. redirect to login)
-        if (response.status === 401) {
-            // Optional: removeAuthToken(); 
-            // window.location.href = '/login'; 
+        let errorMessage = 'API Error';
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.error?.message || `Error ${response.status}: ${response.statusText}`;
+        } catch {
+            errorMessage = `Error ${response.status}: ${response.statusText}`;
         }
         
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'API Error');
+        console.error(`API Request Failed: ${requestUrl} [${response.status}]`, errorMessage);
+        throw new Error(errorMessage);
     }
 
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Fetch API Error:', error);
+    console.error(`Fetch API Error on ${requestUrl}:`, error);
+    throw error;
+  }
+}
+export async function uploadFile(file: File) {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append("files", file);
+
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const requestUrl = `${STRAPI_URL}/api/upload`;
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "Upload failed");
+    }
+
+    const data = await response.json();
+    return data[0]; // Strapi returns an array of uploaded files
+  } catch (error) {
+    console.error("Upload Error:", error);
     throw error;
   }
 }

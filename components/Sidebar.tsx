@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "./Sidebar.module.css";
 import { useAuth } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
 
 const menuItems = [
   { name: "Dashboard", path: "/" },
@@ -13,6 +15,7 @@ const menuItems = [
   { name: "Inventory", path: "/inventory" },
   { name: "Sales", path: "/sales" },
   { name: "Customers", path: "/customers" },
+  { name: "Suppliers", path: "/suppliers" },
   { name: "HR & Payroll", path: "/hr" },
   { name: "Trial Balance", path: "/reports/trial-balance" },
   { name: "Balance Sheet", path: "/reports/balance-sheet" },
@@ -24,10 +27,23 @@ const menuItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { logout, user } = useAuth();
+  const { settings } = useSettings();
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.logo}>RefuelOS</div>
+      <div className={styles.logo}>
+        {settings.logoUrl ? (
+          <Image
+            src={settings.logoUrl}
+            alt={settings.siteName}
+            width={150}
+            height={40}
+            style={{ objectFit: "contain", maxHeight: "40px" }}
+          />
+        ) : (
+          settings.siteName
+        )}
+      </div>
 
       {user && (
         <div

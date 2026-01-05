@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchAPI } from "../../lib/api";
+import Image from "next/image";
+import { fetchAPI, uploadFile, STRAPI_URL } from "../../lib/api";
+
+interface StrapiImage {
+  id: number;
+  url: string;
+}
 
 interface Product {
   documentId: string;
@@ -15,6 +21,7 @@ interface Product {
   description?: string;
   attributes?: Record<string, string>;
   alertLevel?: number;
+  image?: StrapiImage | null;
 }
 
 interface ProductAttribute {
@@ -29,6 +36,10 @@ export default function InventoryPage() {
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Media State
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,6 +58,7 @@ export default function InventoryPage() {
     alertLevel: 10,
     description: "",
     attributes: {} as Record<string, string>,
+    image: null as StrapiImage | null,
   });
 
   const loadProducts = async () => {
@@ -95,8 +107,23 @@ export default function InventoryPage() {
       alertLevel: 10,
       description: "",
       attributes: {},
+      image: null,
     });
     setEditingId(null);
+    setImageFile(null);
+    setImagePreview("");
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageFile(file);
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleOpenCreate = () => {
@@ -116,8 +143,15 @@ export default function InventoryPage() {
       alertLevel: product.alertLevel || 10,
       description: product.description || "",
       attributes: product.attributes || {},
+      image: product.image || null,
     });
     setEditingId(product.documentId);
+    if (product.image?.url) {
+      setImagePreview(`${STRAPI_URL}${product.image.url}`);
+    } else {
+      setImagePreview("");
+    }
+    setImageFile(null);
     setIsModalOpen(true);
   };
 
@@ -140,23 +174,35 @@ export default function InventoryPage() {
     setError("");
 
     try {
+      let imageId = formData.image?.id;
+
+      if (imageFile) {
+        const uploaded = await uploadFile(imageFile);
+        imageId = uploaded.id;
+      }
+
+      const payload = {
+        ...formData,
+        image: imageId || null,
+      };
+
       if (editingId) {
         await fetchAPI(`/products/${editingId}`, {
           method: "PUT",
-          body: JSON.stringify({ data: formData }),
+          body: JSON.stringify({ data: payload }),
         });
       } else {
         await fetchAPI("/products", {
           method: "POST",
-          body: JSON.stringify({ data: formData }),
+          body: JSON.stringify({ data: payload }),
         });
       }
 
       setIsModalOpen(false);
       resetForm();
       loadProducts();
-    } catch (err: any) {
-      setError(err.message || "Operation failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Operation failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -698,6 +744,54 @@ export default function InventoryPage() {
                         alertLevel: parseInt(e.target.value) || 0,
                       })
                     }
+                  />
+                </div>
+              </div>
+
+              {/* Product Image */}
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "0.5rem",
+                    fontSize: "0.9rem",
+                    fontWeight: 500,
+                  }}
+                >
+                  Product Image
+                </label>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+                >
+                  {imagePreview && (
+                    <div
+                      style={{
+                        width: "100px",
+                        height: "100px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "0.5rem",
+                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <Image
+                        src={imagePreview}
+                        alt="Product Preview"
+                        width={100}
+                        height={100}
+                        style={{ objectFit: "contain" }}
+                        unoptimized
+                      />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    style={{ fontSize: "0.8rem" }}
                   />
                 </div>
               </div>

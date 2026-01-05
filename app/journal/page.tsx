@@ -10,6 +10,18 @@ interface JournalItem {
   description: string;
 }
 
+interface JournalDetail {
+  id: number;
+  debit: number;
+  credit: number;
+  description: string;
+  account?: {
+    documentId: string;
+    code: string;
+    name: string;
+  };
+}
+
 interface JournalEntry {
   documentId: string;
   entryDate: string;
@@ -17,7 +29,7 @@ interface JournalEntry {
   description: string;
   totalDebit: number;
   totalCredit: number;
-  details: any[];
+  details: JournalDetail[];
 }
 
 interface Account {
@@ -57,8 +69,10 @@ export default function JournalPage() {
       if (res.data) {
         setEntries(res.data);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to load journal entries");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load journal entries"
+      );
     } finally {
       setLoading(false);
     }
@@ -110,7 +124,7 @@ export default function JournalPage() {
         entryDate: fullEntry.entryDate,
         reference: fullEntry.reference,
         description: fullEntry.description,
-        details: fullEntry.details.map((d: any) => ({
+        details: fullEntry.details.map((d: JournalDetail) => ({
           account: d.account?.documentId || "",
           debit: d.debit || 0,
           credit: d.credit || 0,
@@ -119,8 +133,11 @@ export default function JournalPage() {
       });
       setEditingId(entry.documentId);
       setIsModalOpen(true);
-    } catch (err: any) {
-      alert("Failed to load entry: " + err.message);
+    } catch (err: unknown) {
+      alert(
+        "Failed to load entry: " +
+          (err instanceof Error ? err.message : "Unknown error")
+      );
     }
   };
 
@@ -132,8 +149,11 @@ export default function JournalPage() {
         method: "DELETE",
       });
       setEntries((prev) => prev.filter((e) => e.documentId !== documentId));
-    } catch (err: any) {
-      alert("Failed to delete: " + err.message);
+    } catch (err: unknown) {
+      alert(
+        "Failed to delete: " +
+          (err instanceof Error ? err.message : "Unknown error")
+      );
     }
   };
 
@@ -158,9 +178,13 @@ export default function JournalPage() {
     });
   };
 
-  const updateLine = (index: number, field: keyof JournalItem, value: any) => {
+  const updateLine = (
+    index: number,
+    field: keyof JournalItem,
+    value: string | number
+  ) => {
     const newDetails = [...formData.details];
-    newDetails[index] = { ...newDetails[index], [field]: value };
+    newDetails[index] = { ...newDetails[index], [field]: value } as JournalItem;
     setFormData({ ...formData, details: newDetails });
   };
 
@@ -220,8 +244,8 @@ export default function JournalPage() {
       setIsModalOpen(false);
       resetForm();
       loadEntries();
-    } catch (err: any) {
-      setError(err.message || "Operation failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Operation failed");
     } finally {
       setIsSubmitting(false);
     }

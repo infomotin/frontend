@@ -1,13 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchAPI } from "../../lib/api";
+import Image from "next/image";
+import { fetchAPI, uploadFile, STRAPI_URL } from "../../lib/api";
+import { useSettings } from "../../context/SettingsContext";
 
 interface AddressEntity {
   id: number;
   documentId: string;
   name: string;
   bnName?: string;
+}
+
+interface StrapiImage {
+  id: number;
+  url: string;
 }
 
 interface SystemSettings {
@@ -36,9 +43,12 @@ interface SystemSettings {
   companyName: string;
   companyPhone: string;
   companyEmail: string;
+  siteLogo?: StrapiImage | null;
+  siteIcon?: StrapiImage | null;
 }
 
 export default function SystemSettingsPage() {
+  const { refreshSettings } = useSettings();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,6 +61,12 @@ export default function SystemSettingsPage() {
   const [upazilas, setUpazilas] = useState<AddressEntity[]>([]);
   const [cityCorporations, setCityCorporations] = useState<AddressEntity[]>([]);
   const [zones, setZones] = useState<AddressEntity[]>([]);
+
+  // Media State
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>("");
+  const [iconPreview, setIconPreview] = useState<string>("");
 
   const [formData, setFormData] = useState<SystemSettings>({
     siteName: "RefuelOS",
@@ -78,6 +94,8 @@ export default function SystemSettingsPage() {
     companyName: "",
     companyPhone: "",
     companyEmail: "",
+    siteLogo: null,
+    siteIcon: null,
   });
 
   useEffect(() => {
@@ -85,22 +103,23 @@ export default function SystemSettingsPage() {
       try {
         await loadInitialData();
         await loadSettings();
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Initialization failed", err);
       } finally {
         setLoading(false);
       }
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadInitialData = async () => {
     try {
       const res = await fetchAPI("/countries?sort=name:ASC");
       if (res.data) setCountries(res.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load countries. Check Strapi permissions.", err);
-      if (err.message.includes("Forbidden")) {
+      if (err instanceof Error && err.message.includes("Forbidden")) {
         setError(
           "Strapi Permissions Error: Please ensure Public/Authenticated roles have 'find' access to all Address entities (Country, Division, etc.)"
         );
@@ -110,39 +129,85 @@ export default function SystemSettingsPage() {
 
   const loadSettings = async () => {
     try {
-      // Populate relations to get names/IDs
-      const res = await fetchAPI("/system-setting?populate=*");
-      if (res.data) {
+      // Strapi Single Types can sometimes be tricky with naming in REST
+      let res;
+      try {
+        res = await fetchAPI("/system-setting?populate=*");
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("404")) {
+          console.log("Singular endpoint 404, trying plural...");
+          res = await fetchAPI("/system-settings?populate=*");
+        } else {
+          throw err;
+        }
+      }
+
+      if (res && res.data) {
         const data = res.data;
 
-        // Merge with existing formData to preserve structure
+        if (data.siteLogo?.url) {
+          setLogoPreview(`${STRAPI_URL}${data.siteLogo.url}`);
+        }
+        if (data.siteIcon?.url) {
+          setIconPreview(`${STRAPI_URL}${data.siteIcon.url}`);
+        }
+
+        // Strapi v5 might return data flattened or under an attributes key depending on config
+        const attrs = data.attributes || data;
+
         setFormData((prev) => ({
           ...prev,
-          ...data,
-          country: data.country?.documentId || null,
-          division: data.division?.documentId || null,
-          district: data.district?.documentId || null,
-          upazila: data.upazila?.documentId || null,
-          cityCorporation: data.cityCorporation?.documentId || null,
-          zone: data.zone?.documentId || null,
+          ...attrs,
+          country: attrs.country?.documentId || null,
+          division: attrs.division?.documentId || null,
+          district: attrs.district?.documentId || null,
+          upazila: attrs.upazila?.documentId || null,
+          cityCorporation: attrs.cityCorporation?.documentId || null,
+          zone: attrs.zone?.documentId || null,
         }));
 
         // Fetch dependent lists if data exists
-        if (data.country?.documentId) loadDivisions(data.country.documentId);
-        if (data.division?.documentId) loadDistricts(data.division.documentId);
-        if (data.district?.documentId) {
-          loadUpazilas(data.district.documentId);
-          loadCityCorporations(data.district.documentId);
+        if (attrs.country?.documentId) loadDivisions(attrs.country.documentId);
+        if (attrs.division?.documentId)
+          loadDistricts(attrs.division.documentId);
+        if (attrs.district?.documentId) {
+          loadUpazilas(attrs.district.documentId);
+          loadCityCorporations(attrs.district.documentId);
         }
-        if (data.cityCorporation?.documentId)
-          loadZones(data.cityCorporation.documentId);
+        if (attrs.cityCorporation?.documentId)
+          loadZones(attrs.cityCorporation.documentId);
       }
-    } catch (err: any) {
-      if (err.message.includes("Not Found")) {
-        console.log("No settings found, using defaults");
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        (err.message.includes("404") || err.message.includes("Not Found"))
+      ) {
+        console.log("No setting record exists yet.");
       } else {
-        console.error("Failed to load settings", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load settings"
+        );
       }
+    }
+  };
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "logo" | "icon"
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (type === "logo") {
+          setLogoFile(file);
+          setLogoPreview(reader.result as string);
+        } else {
+          setIconFile(file);
+          setIconPreview(reader.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -265,17 +330,51 @@ export default function SystemSettingsPage() {
     setSuccessMessage("");
 
     try {
-      // In Strapi v5, PUT to single type works if it exists, but might need POST if not
-      // Simple strategy: Always try PUT, catch error if logic suggests otherwise
-      await fetchAPI("/system-setting", {
-        method: "PUT",
-        body: JSON.stringify({ data: formData }),
-      });
+      // Handle file uploads first
+      let logoId = formData.siteLogo?.id;
+      let iconId = formData.siteIcon?.id;
+
+      if (logoFile) {
+        const uploadedLogo = await uploadFile(logoFile);
+        logoId = uploadedLogo.id;
+      }
+      if (iconFile) {
+        const uploadedIcon = await uploadFile(iconFile);
+        iconId = uploadedIcon.id;
+      }
+
+      // Filter out system fields that Strapi rejects in PUT/POST bodies
+      const cleanedData: Record<string, unknown> = {
+        ...formData,
+        siteLogo: logoId || null,
+        siteIcon: iconId || null,
+      };
+      ["id", "documentId", "createdAt", "updatedAt", "publishedAt"].forEach(
+        (key) => delete (cleanedData as any)[key]
+      );
+
+      // Try singular first, fallback to plural if 404
+      try {
+        await fetchAPI("/system-setting", {
+          method: "PUT",
+          body: JSON.stringify({ data: cleanedData }),
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("404")) {
+          await fetchAPI("/system-settings", {
+            method: "PUT",
+            body: JSON.stringify({ data: cleanedData }),
+          });
+        } else {
+          throw err;
+        }
+      }
 
       setSuccessMessage("Settings saved successfully!");
+      refreshSettings(); // Apply branding changes (logo, colors, site name) immediately
       setTimeout(() => setSuccessMessage(""), 3000);
-    } catch (err: any) {
-      setError(err.message || "Failed to save settings");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setIsSubmitting(false);
     }
@@ -492,6 +591,102 @@ export default function SystemSettingsPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, secondaryColor: e.target.value })
                   }
+                />
+              </div>
+            </div>
+
+            {/* Logo Upload */}
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "0.5rem",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                }}
+              >
+                Site Logo
+              </label>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+              >
+                {logoPreview && (
+                  <div
+                    style={{
+                      width: "80px",
+                      height: "80px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "0.5rem",
+                      overflow: "hidden",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    <Image
+                      src={logoPreview}
+                      alt="Logo Preview"
+                      width={80}
+                      height={80}
+                      style={{ objectFit: "contain" }}
+                      unoptimized
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, "logo")}
+                  style={{ fontSize: "0.8rem" }}
+                />
+              </div>
+            </div>
+
+            {/* Icon Upload */}
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "0.5rem",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                }}
+              >
+                Site Icon (Favicon)
+              </label>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+              >
+                {iconPreview && (
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "0.25rem",
+                      overflow: "hidden",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    <Image
+                      src={iconPreview}
+                      alt="Icon Preview"
+                      width={40}
+                      height={40}
+                      style={{ objectFit: "contain" }}
+                      unoptimized
+                    />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, "icon")}
+                  style={{ fontSize: "0.8rem" }}
                 />
               </div>
             </div>
