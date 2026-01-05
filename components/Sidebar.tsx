@@ -8,12 +8,17 @@ import { useAuth } from "../context/AuthContext";
 const menuItems = [
   { name: "Dashboard", path: "/" },
   { name: "Accounts", path: "/accounts" },
+  { name: "Journal", path: "/journal" },
   { name: "Requisitions", path: "/requisitions" },
   { name: "Inventory", path: "/inventory" },
   { name: "Sales", path: "/sales" },
   { name: "Customers", path: "/customers" },
   { name: "HR & Payroll", path: "/hr" },
-  { name: "Reports", path: "/reports" },
+  { name: "Trial Balance", path: "/reports/trial-balance" },
+  { name: "Balance Sheet", path: "/reports/balance-sheet" },
+  { name: "Settings", path: "/settings" },
+  { name: "Product Attributes", path: "/settings/product-attributes" },
+  { name: "Address Setup", path: "/settings/address" },
 ];
 
 export default function Sidebar() {

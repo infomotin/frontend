@@ -535,7 +535,11 @@ export default function AccountsPage() {
                     border: "1px solid #cbd5e1",
                     borderRadius: "0.25rem",
                   }}
-                  value={formData.currentBalance}
+                  value={
+                    Number.isNaN(formData.currentBalance)
+                      ? ""
+                      : formData.currentBalance
+                  }
                   onChange={(e) =>
                     setFormData({
                       ...formData,
