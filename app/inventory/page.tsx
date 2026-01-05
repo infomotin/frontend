@@ -9,7 +9,25 @@ interface StrapiImage {
   url: string;
 }
 
+interface ProductAttribute {
+  documentId: string;
+  name: string;
+  inputType: string;
+  values?: string[];
+}
+
 interface Category {
+  documentId: string;
+  name: string;
+  attributes?: ProductAttribute[];
+}
+
+interface Brand {
+  documentId: string;
+  name: string;
+}
+
+interface Manufacturer {
   documentId: string;
   name: string;
 }
@@ -27,27 +45,23 @@ interface Product {
   costPrice: number;
   sellingPrice: number;
   description?: string;
-  attributes?: Record<string, string>;
+  attributeValues?: Record<string, string>;
   alertLevel?: number;
   image?: StrapiImage | null;
   category?: Category;
   subCategory?: Category;
   childCategory?: Category;
-}
-
-interface ProductAttribute {
-  documentId: string;
-  name: string;
-  type: string;
-  values: string[];
+  brand?: Brand;
+  manufacturer?: Manufacturer;
 }
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subCategories, setSubCategories] = useState<Category[]>([]);
   const [childCategories, setChildCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -68,6 +82,8 @@ export default function InventoryPage() {
     category: "",
     subCategory: "",
     childCategory: "",
+    brand: "",
+    manufacturer: "",
     baseUnit: "Pcs",
     purchaseUnit: "Pcs",
     saleUnit: "Pcs",
@@ -78,7 +94,7 @@ export default function InventoryPage() {
     stockQuantity: 0,
     alertLevel: 10,
     description: "",
-    attributes: {} as Record<string, string>,
+    attributeValues: {} as Record<string, string>,
     image: null as StrapiImage | null,
   });
 
@@ -94,19 +110,30 @@ export default function InventoryPage() {
     }
   };
 
-  const loadAttributes = async () => {
+  const loadCategories = async () => {
     try {
-      const res = await fetchAPI("/product-attributes");
-      if (res.data) setAttributes(res.data);
+      const res = await fetchAPI(
+        "/product-categories?populate=*&sort=name:ASC"
+      );
+      if (res.data) setCategories(res.data);
     } catch (err) {
       console.error(err);
     }
   };
 
-  const loadCategories = async () => {
+  const loadBrands = async () => {
     try {
-      const res = await fetchAPI("/product-categories?sort=name:ASC");
-      if (res.data) setCategories(res.data);
+      const res = await fetchAPI("/product-brands?sort=name:ASC");
+      if (res.data) setBrands(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadManufacturers = async () => {
+    try {
+      const res = await fetchAPI("/product-manufacturers?sort=name:ASC");
+      if (res.data) setManufacturers(res.data);
     } catch (err) {
       console.error(err);
     }
@@ -136,8 +163,9 @@ export default function InventoryPage() {
 
   useEffect(() => {
     loadProducts();
-    loadAttributes();
     loadCategories();
+    loadBrands();
+    loadManufacturers();
   }, []);
 
   const resetForm = () => {
@@ -147,6 +175,8 @@ export default function InventoryPage() {
       category: "",
       subCategory: "",
       childCategory: "",
+      brand: "",
+      manufacturer: "",
       baseUnit: "Pcs",
       purchaseUnit: "Pcs",
       saleUnit: "Pcs",
@@ -157,7 +187,7 @@ export default function InventoryPage() {
       stockQuantity: 0,
       alertLevel: 10,
       description: "",
-      attributes: {},
+      attributeValues: {},
       image: null,
     });
     setEditingId(null);
@@ -184,13 +214,15 @@ export default function InventoryPage() {
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = async (product: Product) => {
+  const handleOpenEdit = async (product: any) => {
     setFormData({
       name: product.name,
       sku: product.sku,
       category: product.category?.documentId || "",
       subCategory: product.subCategory?.documentId || "",
       childCategory: product.childCategory?.documentId || "",
+      brand: product.brand?.documentId || "",
+      manufacturer: product.manufacturer?.documentId || "",
       baseUnit: product.baseUnit || "Pcs",
       purchaseUnit: product.purchaseUnit || "Pcs",
       saleUnit: product.saleUnit || "Pcs",
@@ -201,7 +233,7 @@ export default function InventoryPage() {
       stockQuantity: product.stockQuantity,
       alertLevel: product.alertLevel || 10,
       description: product.description || "",
-      attributes: product.attributes || {},
+      attributeValues: product.attributeValues || {},
       image: product.image || null,
     });
     setEditingId(product.documentId);
@@ -221,12 +253,12 @@ export default function InventoryPage() {
   };
 
   const handleDelete = async (documentId: string) => {
-    if (!confirm("Are you sure you want to delete this product?")) return;
+    if (!confirm("Are you sure?")) return;
     try {
       await fetchAPI(`/products/${documentId}`, { method: "DELETE" });
       loadProducts();
     } catch (err: any) {
-      alert("Failed to delete: " + err.message);
+      alert("Failed: " + err.message);
     }
   };
 
@@ -248,6 +280,8 @@ export default function InventoryPage() {
         category: formData.category || null,
         subCategory: formData.subCategory || null,
         childCategory: formData.childCategory || null,
+        brand: formData.brand || null,
+        manufacturer: formData.manufacturer || null,
       };
 
       if (editingId) {
@@ -272,22 +306,19 @@ export default function InventoryPage() {
     }
   };
 
-  const handleCategoryChange = (val: string) => {
+  const selectedCategory = categories.find(
+    (c) => c.documentId === formData.category
+  );
+  const relevantAttributes = selectedCategory?.attributes || [];
+
+  const handleAttributeChange = (name: string, value: string) => {
     setFormData({
       ...formData,
-      category: val,
-      subCategory: "",
-      childCategory: "",
+      attributeValues: {
+        ...formData.attributeValues,
+        [name]: value,
+      },
     });
-    setSubCategories([]);
-    setChildCategories([]);
-    if (val) loadSubCategories(val);
-  };
-
-  const handleSubCategoryChange = (val: string) => {
-    setFormData({ ...formData, subCategory: val, childCategory: "" });
-    setChildCategories([]);
-    if (val) loadChildCategories(val);
   };
 
   if (loading) return <div className="p-8">Loading Inventory...</div>;
@@ -310,118 +341,145 @@ export default function InventoryPage() {
         </button>
       </div>
 
-      {error && !isModalOpen && (
-        <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
-          {error}
-        </div>
-      )}
-
       <div className="glass-panel" style={{ overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              textAlign: "left",
-            }}
-          >
-            <thead
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            textAlign: "left",
+          }}
+        >
+          <thead>
+            <tr
               style={{
                 background: "rgba(0,0,0,0.02)",
                 borderBottom: "1px solid rgba(0,0,0,0.05)",
               }}
             >
-              <tr>
-                <th style={{ padding: "1rem" }}>Name / SKU</th>
-                <th style={{ padding: "1rem" }}>Categories</th>
-                <th style={{ padding: "1rem" }}>Stock</th>
-                <th style={{ padding: "1rem" }}>Unit Price</th>
-                <th style={{ padding: "1rem", textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
+              <th style={{ padding: "1rem" }}>Product</th>
+              <th style={{ padding: "1rem" }}>Brand & Category</th>
+              <th style={{ padding: "1rem" }}>Stock</th>
+              <th style={{ padding: "1rem" }}>Status</th>
+              <th style={{ padding: "1rem", textAlign: "right" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((item) => (
+              <tr
+                key={item.documentId}
+                style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
+              >
+                <td style={{ padding: "1rem" }}>
+                  <div
                     style={{
-                      padding: "2rem",
-                      textAlign: "center",
-                      color: "#94a3b8",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
                     }}
                   >
-                    No products found.
-                  </td>
-                </tr>
-              ) : (
-                products.map((item) => (
-                  <tr
-                    key={item.documentId}
-                    style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-                  >
-                    <td style={{ padding: "1rem" }}>
+                    {item.image?.url ? (
+                      <Image
+                        src={`${STRAPI_URL}${item.image.url}`}
+                        alt={item.name}
+                        width={40}
+                        height={40}
+                        style={{ borderRadius: "0.25rem", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          background: "#f1f5f9",
+                          borderRadius: "0.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.75rem",
+                          color: "#94a3b8",
+                        }}
+                      >
+                        N/A
+                      </div>
+                    )}
+                    <div>
                       <div style={{ fontWeight: 600 }}>{item.name}</div>
                       <div
                         style={{
-                          fontSize: "0.75rem",
+                          fontSize: "0.7rem",
                           color: "#64748b",
                           fontFamily: "monospace",
                         }}
                       >
                         {item.sku}
                       </div>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <div style={{ fontSize: "0.85rem", color: "#1e293b" }}>
-                        {item.category?.name || "N/A"}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        {item.subCategory?.name
-                          ? `> ${item.subCategory.name}`
-                          : ""}
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          color:
-                            item.stockQuantity <= (item.alertLevel || 10)
-                              ? "#ef4444"
-                              : "#22c55e",
-                        }}
-                      >
-                        {item.stockQuantity} {item.baseUnit}
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <div>Buy: ${item.costPrice}</div>
-                      <div style={{ fontWeight: 600 }}>
-                        Sell: ${item.sellingPrice}
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem", textAlign: "right" }}>
-                      <button
-                        onClick={() => handleOpenEdit(item)}
-                        className="btn-icon"
-                        style={{ color: "#3b82f6", marginRight: "0.5rem" }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.documentId)}
-                        className="btn-icon"
-                        style={{ color: "#ef4444" }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </div>
+                </td>
+                <td style={{ padding: "1rem" }}>
+                  <div
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      color: "#3b82f6",
+                    }}
+                  >
+                    {item.brand?.name || "No Brand"}
+                  </div>
+                  <div style={{ fontSize: "0.85rem" }}>
+                    {item.category?.name || "General"}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                    {item.subCategory?.name ? `→ ${item.subCategory.name}` : ""}
+                  </div>
+                </td>
+                <td style={{ padding: "1rem" }}>
+                  <div style={{ fontWeight: 700 }}>
+                    {item.stockQuantity} {item.baseUnit}
+                  </div>
+                </td>
+                <td style={{ padding: "1rem" }}>
+                  <span
+                    style={{
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "1rem",
+                      fontSize: "0.7rem",
+                      fontWeight: 700,
+                      background:
+                        item.stockQuantity > (item.alertLevel || 10)
+                          ? "#ecfdf5"
+                          : "#fef2f2",
+                      color:
+                        item.stockQuantity > (item.alertLevel || 10)
+                          ? "#059669"
+                          : "#ef4444",
+                    }}
+                  >
+                    {item.stockQuantity > (item.alertLevel || 10)
+                      ? "IN STOCK"
+                      : "LOW STOCK"}
+                  </span>
+                </td>
+                <td style={{ padding: "1rem", textAlign: "right" }}>
+                  <button
+                    onClick={() => handleOpenEdit(item)}
+                    className="btn-icon"
+                    style={{ color: "#3b82f6", marginRight: "0.5rem" }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item.documentId)}
+                    className="btn-icon"
+                    style={{ color: "#ef4444" }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {isModalOpen && (
@@ -444,26 +502,22 @@ export default function InventoryPage() {
             className="glass-panel"
             style={{
               background: "white",
-              padding: "2rem",
-              width: "95%",
+              padding: "2.5rem",
+              width: "100%",
               maxWidth: "900px",
               maxHeight: "90vh",
               overflowY: "auto",
             }}
           >
-            <h2 style={{ marginTop: 0 }}>
-              {editingId ? "Edit Product" : "New Product"}
+            <h2 style={{ marginBottom: "2rem" }}>
+              {editingId ? "Edit Product" : "New Universal Product"}
             </h2>
 
             <form
               onSubmit={handleSubmit}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "1.5rem",
-              }}
+              style={{ display: "flex", flexDirection: "column", gap: "2rem" }}
             >
-              {/* Category Hierarchy */}
+              {/* Part 1: Classification */}
               <div
                 style={{
                   background: "#f8fafc",
@@ -474,14 +528,63 @@ export default function InventoryPage() {
               >
                 <h3
                   style={{
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
+                    fontSize: "0.85rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    color: "#64748b",
                     marginBottom: "1rem",
-                    color: "#475569",
                   }}
                 >
-                  PRODUCT CLASSIFICATION
+                  1. Product Classification
                 </h3>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "1rem",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  <div className="form-group">
+                    <label className="form-label">Brand</label>
+                    <select
+                      className="form-input"
+                      value={formData.brand}
+                      onChange={(e) =>
+                        setFormData({ ...formData, brand: e.target.value })
+                      }
+                    >
+                      <option value="">Select Brand</option>
+                      {brands.map((b) => (
+                        <option key={b.documentId} value={b.documentId}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Manufacturer</label>
+                    <select
+                      className="form-input"
+                      value={formData.manufacturer}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          manufacturer: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Select Manufacturer</option>
+                      {manufacturers.map((m) => (
+                        <option key={m.documentId} value={m.documentId}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     display: "grid",
@@ -490,12 +593,21 @@ export default function InventoryPage() {
                   }}
                 >
                   <div className="form-group">
-                    <label className="form-label">Category</label>
+                    <label className="form-label">Main Category</label>
                     <select
                       required
                       className="form-input"
                       value={formData.category}
-                      onChange={(e) => handleCategoryChange(e.target.value)}
+                      onChange={(e) => {
+                        setFormData({
+                          ...formData,
+                          category: e.target.value,
+                          subCategory: "",
+                          childCategory: "",
+                          attributeValues: {},
+                        });
+                        loadSubCategories(e.target.value);
+                      }}
                     >
                       <option value="">Select Category</option>
                       {categories.map((c) => (
@@ -511,7 +623,14 @@ export default function InventoryPage() {
                       className="form-input"
                       disabled={!formData.category}
                       value={formData.subCategory}
-                      onChange={(e) => handleSubCategoryChange(e.target.value)}
+                      onChange={(e) => {
+                        setFormData({
+                          ...formData,
+                          subCategory: e.target.value,
+                          childCategory: "",
+                        });
+                        loadChildCategories(e.target.value);
+                      }}
                     >
                       <option value="">Select Sub-Category</option>
                       {subCategories.map((s) => (
@@ -545,7 +664,75 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {/* Basic Info */}
+              {/* Part 2: Dynamic Attributes */}
+              {relevantAttributes.length > 0 && (
+                <div
+                  style={{
+                    background: "#fffbeb",
+                    padding: "1.5rem",
+                    borderRadius: "1rem",
+                    border: "1px solid #fef3c7",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "0.85rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      color: "#b45309",
+                      marginBottom: "1rem",
+                    }}
+                  >
+                    2. Specific Attributes (Dynamic)
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "1.5rem",
+                    }}
+                  >
+                    {relevantAttributes.map((attr) => (
+                      <div key={attr.documentId} className="form-group">
+                        <label className="form-label">{attr.name}</label>
+                        {attr.inputType === "Select" ? (
+                          <select
+                            className="form-input"
+                            value={formData.attributeValues[attr.name] || ""}
+                            onChange={(e) =>
+                              handleAttributeChange(attr.name, e.target.value)
+                            }
+                          >
+                            <option value="">Select {attr.name}</option>
+                            {attr.values?.map((v) => (
+                              <option key={v} value={v}>
+                                {v}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={
+                              attr.inputType === "Date"
+                                ? "date"
+                                : attr.inputType === "Number"
+                                ? "number"
+                                : "text"
+                            }
+                            className="form-input"
+                            value={formData.attributeValues[attr.name] || ""}
+                            onChange={(e) =>
+                              handleAttributeChange(attr.name, e.target.value)
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Part 3: Basic Details */}
               <div
                 style={{
                   display: "grid",
@@ -558,7 +745,6 @@ export default function InventoryPage() {
                   <input
                     required
                     className="form-input"
-                    style={{ width: "100%" }}
                     value={formData.name}
                     onChange={(e) =>
                       setFormData({ ...formData, name: e.target.value })
@@ -566,10 +752,9 @@ export default function InventoryPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">SKU / Barcode</label>
+                  <label className="form-label">SKU / Code</label>
                   <input
                     className="form-input"
-                    style={{ width: "100%" }}
                     value={formData.sku}
                     onChange={(e) =>
                       setFormData({ ...formData, sku: e.target.value })
@@ -578,115 +763,30 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {/* Units & Conversion (Universal Design) */}
-              <div
-                style={{
-                  background: "#f0f9ff",
-                  padding: "1.5rem",
-                  borderRadius: "1rem",
-                  border: "1px solid #bae6fd",
-                }}
-              >
-                <h3
-                  style={{
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
-                    marginBottom: "1rem",
-                    color: "#0369a1",
-                  }}
-                >
-                  UNIT & CONVERSION (e.g. Box {">"} Strip {">"} Tablet)
-                </h3>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr",
-                    gap: "1rem",
-                    marginBottom: "1rem",
-                  }}
-                >
-                  <div className="form-group">
-                    <label className="form-label">Purchase Unit</label>
-                    <input
-                      className="form-input"
-                      placeholder="e.g. Box"
-                      value={formData.purchaseUnit}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          purchaseUnit: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Sale Unit</label>
-                    <input
-                      className="form-input"
-                      placeholder="e.g. Strip"
-                      value={formData.saleUnit}
-                      onChange={(e) =>
-                        setFormData({ ...formData, saleUnit: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Base Unit (Smallest)</label>
-                    <input
-                      className="form-input"
-                      placeholder="e.g. Tablet"
-                      value={formData.baseUnit}
-                      onChange={(e) =>
-                        setFormData({ ...formData, baseUnit: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "1.5rem",
-                  }}
-                >
-                  <div className="form-group">
-                    <label className="form-label">
-                      How many <strong>{formData.saleUnit}</strong> in one{" "}
-                      <strong>{formData.purchaseUnit}</strong>?
-                    </label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.purchaseToSaleFactor}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          purchaseToSaleFactor: parseFloat(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">
-                      How many <strong>{formData.baseUnit}</strong> in one{" "}
-                      <strong>{formData.saleUnit}</strong>?
-                    </label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.saleToBaseFactor}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          saleToBaseFactor: parseFloat(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
-                </div>
+              <div className="form-group">
+                <label className="form-label">Image</label>
+                <input
+                  type="file"
+                  onChange={handleImageChange}
+                  className="form-input"
+                  accept="image/*"
+                />
+                {imagePreview && (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    style={{
+                      marginTop: "0.5rem",
+                      width: "100px",
+                      height: "100px",
+                      objectFit: "cover",
+                      borderRadius: "0.5rem",
+                    }}
+                  />
+                )}
               </div>
 
-              {/* Pricing & Stock */}
+              {/* Part 4: Units & Stock */}
               <div
                 style={{
                   display: "grid",
@@ -695,10 +795,19 @@ export default function InventoryPage() {
                 }}
               >
                 <div className="form-group">
-                  <label className="form-label">Cost / Buy Price</label>
+                  <label className="form-label">Base Unit</label>
+                  <input
+                    className="form-input"
+                    value={formData.baseUnit}
+                    onChange={(e) =>
+                      setFormData({ ...formData, baseUnit: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cost Price</label>
                   <input
                     type="number"
-                    step="0.01"
                     className="form-input"
                     value={formData.costPrice}
                     onChange={(e) =>
@@ -713,7 +822,6 @@ export default function InventoryPage() {
                   <label className="form-label">Selling Price</label>
                   <input
                     type="number"
-                    step="0.01"
                     className="form-input"
                     value={formData.sellingPrice}
                     onChange={(e) =>
@@ -725,9 +833,7 @@ export default function InventoryPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">
-                    Stock (in {formData.baseUnit})
-                  </label>
+                  <label className="form-label">Initial Stock</label>
                   <input
                     type="number"
                     className="form-input"
@@ -740,85 +846,23 @@ export default function InventoryPage() {
                     }
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Alert Level</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={formData.alertLevel}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        alertLevel: parseInt(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Image & Description */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 2fr",
-                  gap: "1rem",
-                }}
-              >
-                <div>
-                  <label className="form-label">Product Image</label>
-                  <input
-                    type="file"
-                    onChange={handleImageChange}
-                    style={{ fontSize: "0.8rem" }}
-                  />
-                  {imagePreview && (
-                    <img
-                      src={imagePreview}
-                      style={{
-                        width: "100%",
-                        height: "100px",
-                        objectFit: "contain",
-                        marginTop: "0.5rem",
-                        borderRadius: "0.5rem",
-                        border: "1px solid #ddd",
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Description / Notes</label>
-                  <textarea
-                    className="form-input"
-                    rows={4}
-                    style={{ width: "100%" }}
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                  />
-                </div>
               </div>
 
               <div
                 style={{
                   display: "flex",
                   gap: "1rem",
-                  marginTop: "1rem",
-                  paddingTop: "1.5rem",
                   borderTop: "1px solid #eee",
+                  paddingTop: "1.5rem",
                 }}
               >
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="btn btn-primary"
-                  style={{ flex: 2, padding: "1rem" }}
+                  style={{ flex: 1, padding: "1rem" }}
                 >
-                  {isSubmitting
-                    ? "Saving..."
-                    : editingId
-                    ? "Update Product"
-                    : "Save Product"}
+                  {isSubmitting ? "Saving..." : "Save Product"}
                 </button>
                 <button
                   type="button"

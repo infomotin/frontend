@@ -28,6 +28,8 @@ const menuItems = [
     path: "/settings/product-child-categories",
   },
   { name: "Product Attributes", path: "/settings/product-attributes" },
+  { name: "Product Brand", path: "/settings/product-brands" },
+  { name: "Product Manufacturer", path: "/settings/product-manufacturers" },
   { name: "Address Setup", path: "/settings/address" },
 ];
 

@@ -6,7 +6,7 @@ import { fetchAPI } from "../../../lib/api";
 interface ProductAttribute {
   documentId: string;
   name: string;
-  type: string;
+  inputType: string;
   values: string[];
 }
 
@@ -23,8 +23,8 @@ export default function ProductAttributesPage() {
   // Form State
   const [formData, setFormData] = useState({
     name: "",
-    type: "Size",
-    values: [""],
+    inputType: "Text",
+    values: [] as string[],
   });
 
   const loadAttributes = async () => {
@@ -48,8 +48,8 @@ export default function ProductAttributesPage() {
   const resetForm = () => {
     setFormData({
       name: "",
-      type: "Size",
-      values: [""],
+      inputType: "Text",
+      values: [],
     });
     setEditingId(null);
   };
@@ -62,8 +62,8 @@ export default function ProductAttributesPage() {
   const handleOpenEdit = (attr: ProductAttribute) => {
     setFormData({
       name: attr.name,
-      type: attr.type,
-      values: attr.values || [""],
+      inputType: attr.inputType || "Text",
+      values: attr.values || [],
     });
     setEditingId(attr.documentId);
     setIsModalOpen(true);
@@ -71,39 +71,29 @@ export default function ProductAttributesPage() {
 
   const handleDelete = async (documentId: string) => {
     if (!confirm("Are you sure you want to delete this attribute?")) return;
-
     try {
-      await fetchAPI(`/product-attributes/${documentId}`, {
-        method: "DELETE",
-      });
-      setAttributes((prev) => prev.filter((a) => a.documentId !== documentId));
+      await fetchAPI(`/product-attributes/${documentId}`, { method: "DELETE" });
+      loadAttributes();
     } catch (err: any) {
       alert("Failed to delete: " + err.message);
     }
   };
 
   const addValue = () => {
+    setFormData({ ...formData, values: [...formData.values, ""] });
+  };
+
+  const removeValue = (idx: number) => {
     setFormData({
       ...formData,
-      values: [...formData.values, ""],
+      values: formData.values.filter((_, i) => i !== idx),
     });
   };
 
-  const removeValue = (index: number) => {
-    if (formData.values.length <= 1) {
-      alert("An attribute must have at least one value");
-      return;
-    }
-    setFormData({
-      ...formData,
-      values: formData.values.filter((_, i) => i !== index),
-    });
-  };
-
-  const updateValue = (index: number, value: string) => {
-    const newValues = [...formData.values];
-    newValues[index] = value;
-    setFormData({ ...formData, values: newValues });
+  const updateValue = (idx: number, val: string) => {
+    const next = [...formData.values];
+    next[idx] = val;
+    setFormData({ ...formData, values: next });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -111,18 +101,14 @@ export default function ProductAttributesPage() {
     setIsSubmitting(true);
     setError("");
 
-    // Filter out empty values
-    const cleanedValues = formData.values.filter((v) => v.trim() !== "");
-    if (cleanedValues.length === 0) {
-      setError("Please add at least one value");
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
       const payload = {
-        ...formData,
-        values: cleanedValues,
+        name: formData.name,
+        inputType: formData.inputType,
+        values:
+          formData.inputType === "Select"
+            ? formData.values.filter((v) => v.trim() !== "")
+            : null,
       };
 
       if (editingId) {
@@ -165,23 +151,9 @@ export default function ProductAttributesPage() {
         </button>
       </div>
 
-      {loading && <div>Loading Attributes...</div>}
-
-      {error && !isModalOpen && (
-        <div
-          style={{
-            padding: "1rem",
-            background: "#fee2e2",
-            color: "#dc2626",
-            borderRadius: "0.5rem",
-            marginBottom: "1rem",
-          }}
-        >
-          Error: {error}
-        </div>
-      )}
-
-      {!loading && !error && (
+      {loading ? (
+        <div>Loading...</div>
+      ) : (
         <div className="glass-panel" style={{ overflow: "hidden" }}>
           <table
             style={{
@@ -190,134 +162,93 @@ export default function ProductAttributesPage() {
               textAlign: "left",
             }}
           >
-            <thead
-              style={{
-                background: "rgba(0,0,0,0.02)",
-                borderBottom: "1px solid rgba(0,0,0,0.05)",
-              }}
-            >
-              <tr>
-                <th
-                  style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-                >
-                  Name
-                </th>
-                <th
-                  style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-                >
-                  Type
-                </th>
-                <th
-                  style={{ padding: "1rem", fontWeight: 600, color: "#64748b" }}
-                >
-                  Values
-                </th>
-                <th
-                  style={{
-                    padding: "1rem",
-                    fontWeight: 600,
-                    color: "#64748b",
-                    textAlign: "right",
-                  }}
-                >
-                  Actions
-                </th>
+            <thead>
+              <tr
+                style={{
+                  background: "rgba(0,0,0,0.02)",
+                  borderBottom: "1px solid rgba(0,0,0,0.05)",
+                }}
+              >
+                <th style={{ padding: "1rem" }}>Name</th>
+                <th style={{ padding: "1rem" }}>Input Type</th>
+                <th style={{ padding: "1rem" }}>Values / Data</th>
+                <th style={{ padding: "1rem", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {attributes.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: "2rem",
-                      textAlign: "center",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    No product attributes found.
+              {attributes.map((attr) => (
+                <tr
+                  key={attr.documentId}
+                  style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
+                >
+                  <td style={{ padding: "1rem", fontWeight: 600 }}>
+                    {attr.name}
                   </td>
-                </tr>
-              ) : (
-                attributes.map((attr) => (
-                  <tr
-                    key={attr.documentId}
-                    style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-                  >
-                    <td style={{ padding: "1rem", fontWeight: 600 }}>
-                      {attr.name}
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <span
-                        style={{
-                          padding: "0.25rem 0.75rem",
-                          borderRadius: "999px",
-                          fontSize: "0.75rem",
-                          background: "#e0e7ff",
-                          color: "#4338ca",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {attr.type}
-                      </span>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
+                  <td style={{ padding: "1rem" }}>
+                    <span
+                      style={{
+                        padding: "0.25rem 0.5rem",
+                        borderRadius: "0.25rem",
+                        background: "#e0e7ff",
+                        color: "#4338ca",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      {attr.inputType}
+                    </span>
+                  </td>
+                  <td style={{ padding: "1rem" }}>
+                    {attr.inputType === "Select" ? (
                       <div
                         style={{
                           display: "flex",
-                          gap: "0.5rem",
+                          gap: "0.25rem",
                           flexWrap: "wrap",
                         }}
                       >
-                        {attr.values?.map((val, idx) => (
+                        {attr.values?.map((v, i) => (
                           <span
-                            key={idx}
+                            key={i}
                             style={{
-                              padding: "0.25rem 0.5rem",
                               background: "#f1f5f9",
-                              borderRadius: "0.25rem",
-                              fontSize: "0.85rem",
+                              padding: "0.1rem 0.4rem",
+                              borderRadius: "0.2rem",
+                              fontSize: "0.75rem",
                             }}
                           >
-                            {val}
+                            {v}
                           </span>
                         ))}
                       </div>
-                    </td>
-                    <td style={{ padding: "1rem", textAlign: "right" }}>
-                      <button
-                        onClick={() => handleOpenEdit(attr)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "#3b82f6",
-                          marginRight: "0.5rem",
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(attr.documentId)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "#ef4444",
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
+                    ) : (
+                      <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>
+                        Dynamic {attr.inputType} Input
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "1rem", textAlign: "right" }}>
+                    <button
+                      onClick={() => handleOpenEdit(attr)}
+                      className="btn-icon"
+                      style={{ color: "#3b82f6", marginRight: "0.5rem" }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(attr.documentId)}
+                      className="btn-icon"
+                      style={{ color: "#ef4444" }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Modal */}
       {isModalOpen && (
         <div
           style={{
@@ -334,189 +265,113 @@ export default function ProductAttributesPage() {
           }}
         >
           <div
+            className="glass-panel"
             style={{
               background: "white",
               padding: "2rem",
-              borderRadius: "1rem",
               width: "90%",
-              maxWidth: "600px",
+              maxWidth: "500px",
             }}
           >
-            <h2 style={{ marginTop: 0 }}>
-              {editingId ? "Edit Attribute" : "New Attribute"}
-            </h2>
-
-            {error && (
-              <div
-                style={{
-                  padding: "1rem",
-                  background: "#fee2e2",
-                  color: "#dc2626",
-                  borderRadius: "0.5rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {error}
-              </div>
-            )}
-
+            <h2>{editingId ? "Edit Attribute" : "New Attribute"}</h2>
             <form
               onSubmit={handleSubmit}
               style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
             >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "1rem",
-                }}
-              >
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    Attribute Name
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="e.g., Size"
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    Type
-                  </label>
-                  <select
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "0.25rem",
-                    }}
-                    value={formData.type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, type: e.target.value })
-                    }
-                  >
-                    <option value="Size">Size</option>
-                    <option value="Color">Color</option>
-                    <option value="Material">Material</option>
-                    <option value="Custom">Custom</option>
-                  </select>
-                </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Attribute Name (e.g. Color, Expiry Date)
+                </label>
+                <input
+                  required
+                  className="form-input"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Input Type</label>
+                <select
+                  className="form-input"
+                  value={formData.inputType}
+                  onChange={(e) =>
+                    setFormData({ ...formData, inputType: e.target.value })
+                  }
+                >
+                  <option value="Text">Text (Serial No, Batch)</option>
+                  <option value="Number">Number (Size, Qty)</option>
+                  <option value="Date">Date (Expiry, Mfg Date)</option>
+                  <option value="Select">Select (Color, Material)</option>
+                  <option value="Boolean">Yes/No (Warranty, Eligible)</option>
+                </select>
               </div>
 
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  <label style={{ fontSize: "0.9rem", fontWeight: 500 }}>
-                    Values
-                  </label>
-                  <button
-                    type="button"
-                    onClick={addValue}
-                    style={{
-                      padding: "0.25rem 0.75rem",
-                      background: "#e0e7ff",
-                      border: "none",
-                      borderRadius: "0.25rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                    }}
-                  >
-                    + Add Value
-                  </button>
-                </div>
-                {formData.values.map((value, idx) => (
+              {formData.inputType === "Select" && (
+                <div>
                   <div
-                    key={idx}
                     style={{
                       display: "flex",
-                      gap: "0.5rem",
+                      justifyContent: "space-between",
                       marginBottom: "0.5rem",
                     }}
                   >
-                    <input
-                      type="text"
-                      placeholder={`e.g., ${
-                        formData.type === "Size"
-                          ? "Small, Medium, Large"
-                          : formData.type === "Color"
-                          ? "Red, Blue, Green"
-                          : "Value"
-                      }`}
-                      style={{
-                        flex: 1,
-                        padding: "0.5rem",
-                        border: "1px solid #cbd5e1",
-                        borderRadius: "0.25rem",
-                      }}
-                      value={value}
-                      onChange={(e) => updateValue(idx, e.target.value)}
-                    />
+                    <label className="form-label">Options</label>
                     <button
                       type="button"
-                      onClick={() => removeValue(idx)}
-                      style={{
-                        padding: "0.5rem 0.75rem",
-                        background: "#fee2e2",
-                        border: "none",
-                        borderRadius: "0.25rem",
-                        cursor: "pointer",
-                        color: "#dc2626",
-                        fontSize: "1.2rem",
-                      }}
+                      onClick={addValue}
+                      className="btn"
+                      style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
                     >
-                      ×
+                      + Add
                     </button>
                   </div>
-                ))}
-              </div>
+                  {formData.values.map((v, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        gap: "0.5rem",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      <input
+                        className="form-input"
+                        style={{ flex: 1 }}
+                        value={v}
+                        onChange={(e) => updateValue(i, e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeValue(i)}
+                        style={{
+                          color: "red",
+                          border: "none",
+                          background: "none",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
                 <button
                   type="submit"
-                  className="btn btn-primary"
                   disabled={isSubmitting}
+                  className="btn btn-primary"
                   style={{ flex: 1 }}
                 >
-                  {isSubmitting ? "Saving..." : "Save Attribute"}
+                  Save
                 </button>
                 <button
                   type="button"
                   className="btn"
-                  style={{ background: "#e2e8f0", flex: 1 }}
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setError("");
-                  }}
+                  style={{ flex: 1 }}
+                  onClick={() => setIsModalOpen(false)}
                 >
                   Cancel
                 </button>
